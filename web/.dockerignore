@@ -1,0 +1,26 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 测试文件
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 本地环境
+.env
+.venv/
+venv/
+
+# Django 运行文件
+*.log
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+media/
+
+# 编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo

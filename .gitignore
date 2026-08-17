@@ -1,0 +1,42 @@
+# 敏感环境变量
+.env
+.env.*
+!.env.example
+
+# Python 缓存和编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python 虚拟环境
+.venv/
+venv/
+env/
+
+# Django 运行文件
+*.log
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+media/
+
+# 测试和覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+
+# PostgreSQL 数据和备份
+postgres_data/
+backups/
+*.sql
+*.dump
+
+# 编辑器配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
