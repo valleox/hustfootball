@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}系统首页 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>欢迎，{{ user.get_username }}</h1>
+
+  <h2>当前角色</h2>
+  <ul>
+    {% if user.is_superuser %}
+      <li>超级管理员</li>
+    {% endif %}
+
+    {% for group in user.groups.all %}
+      <li>{{ group.name }}</li>
+    {% empty %}
+      {% if not user.is_superuser %}
+        <li>尚未分配角色，请联系管理员。</li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+
+  {% if user.is_staff %}
+    <p><a href="{% url 'admin:index' %}">进入管理后台</a></p>
+  {% endif %}
+
+  <p class="muted">
+    比赛管理和裁判安排功能将在后续步骤接入。
+  </p>
+</section>
+{% endblock %}

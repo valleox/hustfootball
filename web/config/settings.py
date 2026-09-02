@@ -51,7 +51,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -91,7 +91,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'zh-hans'
 
 TIME_ZONE = 'UTC'
 
@@ -133,3 +133,8 @@ DATABASES = {
 
 TIME_ZONE = "Asia/Shanghai"
 USE_TZ = True
+
+# 用户登录与退出
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "scheduling:home"
+LOGOUT_REDIRECT_URL = "login"
