@@ -452,3 +452,166 @@ class AssignmentPageTests(TestCase):
             assistant_assignment.response_status,
             Assignment.ResponseStatus.PENDING,
         )
+
+    def test_complete_assignments_can_be_published(self):
+        self.match.assignment_status = (
+            Match.AssignmentStatus.DRAFT
+        )
+        self.match.published_at = None
+        self.match.save()
+
+        self.client.force_login(self.scheduler)
+        response = self.client.post(
+            reverse(
+                "scheduling:assignment_publish",
+                args=[self.match.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        self.match.refresh_from_db()
+        self.assertEqual(
+            self.match.assignment_status,
+            Match.AssignmentStatus.PUBLISHED,
+        )
+        self.assertIsNotNone(self.match.published_at)
+
+    def test_incomplete_assignments_cannot_be_published(self):
+        self.match.assignment_status = (
+            Match.AssignmentStatus.DRAFT
+        )
+        self.match.published_at = None
+        self.match.save()
+
+        Assignment.objects.filter(
+            match=self.match,
+            position=Assignment.Position.FOURTH_OFFICIAL,
+        ).delete()
+
+        self.client.force_login(self.scheduler)
+        response = self.client.post(
+            reverse(
+                "scheduling:assignment_publish",
+                args=[self.match.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        self.match.refresh_from_db()
+        self.assertEqual(
+            self.match.assignment_status,
+            Match.AssignmentStatus.DRAFT,
+        )
+        self.assertIsNone(self.match.published_at)
+
+    def test_recorder_cannot_publish_assignments(self):
+        self.match.assignment_status = (
+            Match.AssignmentStatus.DRAFT
+        )
+        self.match.published_at = None
+        self.match.save()
+
+        self.client.force_login(self.recorder)
+        response = self.client.post(
+            reverse(
+                "scheduling:assignment_publish",
+                args=[self.match.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+        self.match.refresh_from_db()
+        self.assertEqual(
+            self.match.assignment_status,
+            Match.AssignmentStatus.DRAFT,
+        )
+
+    def test_referee_can_respond_to_own_assignment(self):
+        assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        assignment.response_status = (
+            Assignment.ResponseStatus.PENDING
+        )
+        assignment.response_note = ""
+        assignment.responded_at = None
+        assignment.save()
+
+        self.client.force_login(assignment.referee.user)
+        response = self.client.post(
+            reverse(
+                "scheduling:assignment_respond",
+                args=[assignment.pk],
+            ),
+            {
+                "response_status": (
+                    Assignment.ResponseStatus.CONFIRMED
+                ),
+                "response_note": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        assignment.refresh_from_db()
+        self.assertEqual(
+            assignment.response_status,
+            Assignment.ResponseStatus.CONFIRMED,
+        )
+        self.assertIsNotNone(assignment.responded_at)
+
+    def test_leave_response_requires_note(self):
+        assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+
+        self.client.force_login(assignment.referee.user)
+        response = self.client.post(
+            reverse(
+                "scheduling:assignment_respond",
+                args=[assignment.pk],
+            ),
+            {
+                "response_status": (
+                    Assignment.ResponseStatus.LEAVE
+                ),
+                "response_note": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "申请请假时必须填写说明。",
+        )
+
+        assignment.refresh_from_db()
+        self.assertEqual(
+            assignment.response_status,
+            Assignment.ResponseStatus.CONFIRMED,
+        )
+
+    def test_referee_cannot_respond_for_another_referee(self):
+        own_assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        other_assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.ASSISTANT_1,
+        )
+
+        self.client.force_login(own_assignment.referee.user)
+        response = self.client.get(
+            reverse(
+                "scheduling:assignment_respond",
+                args=[other_assignment.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 403)

@@ -1,10 +1,16 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_POST
 
-from .forms import AssignmentForm, MatchForm
+from .forms import (
+    AssignmentForm,
+    AssignmentResponseForm,
+    MatchForm,
+)
 from .models import Assignment, Match
 
 
@@ -58,13 +64,24 @@ def match_detail(request, pk):
         assignment.position: assignment
         for assignment in match.assignments.all()
     }
-    assignment_rows = [
-        {
-            "position_name": position_name,
-            "assignment": assignments_by_position.get(position),
-        }
-        for position, position_name in Assignment.Position.choices
-    ]
+    assignment_rows = []
+
+    for position, position_name in Assignment.Position.choices:
+        assignment = assignments_by_position.get(position)
+
+        assignment_rows.append(
+            {
+                "position_name": position_name,
+                "assignment": assignment,
+                "can_respond": (
+                    assignment is not None
+                    and match.assignment_status
+                    == Match.AssignmentStatus.PUBLISHED
+                    and assignment.referee.user_id
+                    == request.user.id
+                ),
+            }
+        )
 
     return render(
         request,
@@ -186,5 +203,139 @@ def assignment_update(request, pk):
         {
             "form": form,
             "match": match,
+        },
+    )
+
+@login_required
+@permission_required(
+    "scheduling.publish_assignments",
+    raise_exception=True,
+)
+@require_POST
+def assignment_publish(request, pk):
+    match = get_object_or_404(Match, pk=pk)
+
+    if (
+        match.assignment_status
+        == Match.AssignmentStatus.PUBLISHED
+    ):
+        messages.info(request, "本场裁判安排已经发布。")
+        return redirect(
+            "scheduling:match_detail",
+            pk=match.pk,
+        )
+
+    required_positions = {
+        position
+        for position, _label in Assignment.Position.choices
+    }
+    assigned_positions = set(
+        match.assignments.values_list(
+            "position",
+            flat=True,
+        )
+    )
+    missing_positions = required_positions - assigned_positions
+
+    if missing_positions:
+        position_labels = dict(Assignment.Position.choices)
+        missing_labels = [
+            position_labels[position]
+            for position in sorted(missing_positions)
+        ]
+        messages.error(
+            request,
+            "还不能发布，以下岗位尚未安排："
+            f"{'、'.join(missing_labels)}。",
+        )
+        return redirect(
+            "scheduling:match_detail",
+            pk=match.pk,
+        )
+
+    match.assignment_status = Match.AssignmentStatus.PUBLISHED
+    match.published_at = timezone.now()
+    match.save(
+        update_fields=[
+            "assignment_status",
+            "published_at",
+            "updated_at",
+        ]
+    )
+
+    messages.success(request, "裁判安排已经发布。")
+    return redirect(
+        "scheduling:match_detail",
+        pk=match.pk,
+    )
+
+
+@login_required
+def assignment_respond(request, pk):
+    assignment = get_object_or_404(
+        Assignment.objects.select_related(
+            "match",
+            "match__competition",
+            "match__home_team",
+            "match__away_team",
+            "match__venue",
+            "referee",
+            "referee__user",
+        ),
+        pk=pk,
+    )
+
+    if assignment.referee.user_id != request.user.id:
+        raise PermissionDenied("不能反馈其他裁判的安排。")
+
+    if (
+        assignment.match.assignment_status
+        != Match.AssignmentStatus.PUBLISHED
+    ):
+        messages.error(
+            request,
+            "该场裁判安排尚未发布，暂时不能反馈。",
+        )
+        return redirect(
+            "scheduling:match_detail",
+            pk=assignment.match_id,
+        )
+
+    form = AssignmentResponseForm(
+        request.POST if request.method == "POST" else None,
+        instance=assignment,
+    )
+
+    if request.method == "POST" and form.is_valid():
+        assignment = form.save(commit=False)
+        assignment.responded_at = timezone.now()
+        assignment.save(
+            update_fields=[
+                "response_status",
+                "response_note",
+                "responded_at",
+                "updated_at",
+            ]
+        )
+
+        if (
+            assignment.response_status
+            == Assignment.ResponseStatus.CONFIRMED
+        ):
+            messages.success(request, "已经确认参加本场执法。")
+        else:
+            messages.success(request, "请假申请已经提交。")
+
+        return redirect(
+            "scheduling:match_detail",
+            pk=assignment.match_id,
+        )
+
+    return render(
+        request,
+        "scheduling/assignment_response_form.html",
+        {
+            "assignment": assignment,
+            "form": form,
         },
     )

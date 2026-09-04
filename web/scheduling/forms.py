@@ -242,3 +242,58 @@ class AssignmentForm(forms.Form):
             )
 
         return True
+
+class AssignmentResponseForm(forms.ModelForm):
+    class Meta:
+        model = Assignment
+        fields = (
+            "response_status",
+            "response_note",
+        )
+        labels = {
+            "response_status": "反馈结果",
+            "response_note": "反馈说明",
+        }
+        widgets = {
+            "response_note": forms.Textarea(
+                attrs={
+                    "rows": 4,
+                    "placeholder": (
+                        "申请请假时，请填写具体原因。"
+                    ),
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields["response_status"].choices = [
+            ("", "请选择反馈结果"),
+            (
+                Assignment.ResponseStatus.CONFIRMED,
+                "确认参加执法",
+            ),
+            (
+                Assignment.ResponseStatus.LEAVE,
+                "申请请假",
+            ),
+        ]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        response_status = cleaned_data.get("response_status")
+        response_note = cleaned_data.get("response_note", "").strip()
+
+        if (
+            response_status
+            == Assignment.ResponseStatus.LEAVE
+            and not response_note
+        ):
+            self.add_error(
+                "response_note",
+                "申请请假时必须填写说明。",
+            )
+
+        cleaned_data["response_note"] = response_note
+        return cleaned_data

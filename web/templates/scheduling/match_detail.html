@@ -71,6 +71,13 @@
       </span>
     {% endif %}
   </p>
+  {% if perms.scheduling.publish_assignments and match.assignment_status == "draft" %}
+    <form method="post"
+          action="{% url 'scheduling:assignment_publish' match.pk %}">
+      {% csrf_token %}
+      <button type="submit">发布裁判安排</button>
+    </form>
+  {% endif %}
 
   {% if perms.scheduling.add_assignment and perms.scheduling.change_assignment %}
     <p>
@@ -101,6 +108,17 @@
               {% if row.assignment.response_note %}
                 <div class="muted">
                   {{ row.assignment.response_note|linebreaksbr }}
+                </div>
+              {% endif %}
+              {% if row.can_respond %}
+                <div>
+                  <a href="{% url 'scheduling:assignment_respond' row.assignment.pk %}">
+                    {% if row.assignment.response_status == "pending" %}
+                      提交反馈
+                    {% else %}
+                      修改反馈
+                    {% endif %}
+                  </a>
                 </div>
               {% endif %}
             </td>
