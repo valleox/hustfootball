@@ -24,12 +24,19 @@
   {% if perms.scheduling.view_match %}
     <h2>比赛管理</h2>
     <p>查看比赛时间、参赛球队、场地和比赛状态。</p>
-    <p>
+    <div class="form-actions">
       <a class="button-link"
          href="{% url 'scheduling:match_list' %}">
         查看比赛列表
       </a>
-    </p>
+
+      {% if perms.scheduling.add_match %}
+        <a class="button-link"
+           href="{% url 'scheduling:match_create' %}">
+          录入新比赛
+        </a>
+      {% endif %}
+    </div>
   {% endif %}
 
   {% if user.is_staff %}

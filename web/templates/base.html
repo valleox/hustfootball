@@ -42,7 +42,9 @@
     h1 { margin-top: 0; font-size: 24px; }
     .muted { color: #59675f; }
     label { display: block; margin-bottom: 6px; font-weight: 600; }
-    input {
+    input,
+    select,
+    textarea {
       width: 100%;
       min-height: 44px;
       padding: 10px;
@@ -111,6 +113,20 @@
     }
     .detail-list dd { margin: 0; }
 
+    textarea { resize: vertical; }
+    .form-field { margin-bottom: 18px; }
+    .help-text {
+      margin-top: 4px;
+      color: #59675f;
+      font-size: 14px;
+    }
+    .form-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 24px;
+    }
     @media (max-width: 600px) {
       .card { padding: 18px; }
       .detail-list {

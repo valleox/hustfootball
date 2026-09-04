@@ -11,6 +11,14 @@
   </p>
 
   <h1>{{ match.home_team }} vs {{ match.away_team }}</h1>
+  {% if perms.scheduling.change_match %}
+    <p>
+      <a class="button-link"
+         href="{% url 'scheduling:match_update' match.pk %}">
+        修改比赛信息
+      </a>
+    </p>
+  {% endif %}
 
   <dl class="detail-list">
     <dt>所属赛事</dt>
