@@ -11,13 +11,61 @@ from .forms import (
     AssignmentResponseForm,
     MatchForm,
 )
-from .models import Assignment, Match
+from .models import Assignment, Match, RefereeProfile
 
 
 @never_cache
 @login_required
 def home(request):
-    return render(request, "scheduling/home.html")
+    context = {
+        "has_referee_profile": False,
+        "pending_assignments": [],
+        "upcoming_assignments": [],
+    }
+
+    try:
+        referee_profile = request.user.referee_profile
+    except RefereeProfile.DoesNotExist:
+        pass
+    else:
+        assignments = Assignment.objects.filter(
+            referee=referee_profile,
+            match__assignment_status=(
+                Match.AssignmentStatus.PUBLISHED
+            ),
+            match__kickoff_at__date__gte=timezone.localdate(),
+        ).select_related(
+            "match",
+            "match__competition",
+            "match__home_team",
+            "match__away_team",
+            "match__venue",
+        ).order_by(
+            "match__kickoff_at",
+            "position",
+        )
+
+        context.update(
+            {
+                "has_referee_profile": True,
+                "pending_assignments": assignments.filter(
+                    response_status=(
+                        Assignment.ResponseStatus.PENDING
+                    )
+                ),
+                "upcoming_assignments": assignments.exclude(
+                    response_status=(
+                        Assignment.ResponseStatus.PENDING
+                    )
+                ),
+            }
+        )
+
+    return render(
+        request,
+        "scheduling/home.html",
+        context,
+    )
 
 
 @login_required

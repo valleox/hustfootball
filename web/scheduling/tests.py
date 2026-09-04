@@ -615,3 +615,60 @@ class AssignmentPageTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_referee_home_shows_own_pending_assignment(self):
+        assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        assignment.response_status = (
+            Assignment.ResponseStatus.PENDING
+        )
+        assignment.response_note = ""
+        assignment.responded_at = None
+        assignment.save()
+
+        referee_user = assignment.referee.user
+        referee_user.groups.add(
+            Group.objects.get(name="裁判员")
+        )
+
+        self.client.force_login(referee_user)
+        response = self.client.get(
+            reverse("scheduling:home")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "我的裁判安排")
+        self.assertContains(response, "待确认")
+        self.assertContains(response, "排班测试主队")
+        self.assertContains(response, "排班测试客队")
+        self.assertContains(response, "提交反馈")
+
+    def test_draft_assignment_is_hidden_from_referee_home(self):
+        assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        referee_user = assignment.referee.user
+        referee_user.groups.add(
+            Group.objects.get(name="裁判员")
+        )
+
+        self.match.assignment_status = (
+            Match.AssignmentStatus.DRAFT
+        )
+        self.match.published_at = None
+        self.match.save()
+
+        self.client.force_login(referee_user)
+        response = self.client.get(
+            reverse("scheduling:home")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "目前没有已发布的近期裁判安排。",
+        )
+        self.assertNotContains(response, "排班测试主队")
