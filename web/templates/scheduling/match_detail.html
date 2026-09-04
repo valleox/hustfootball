@@ -58,5 +58,59 @@
       <dd>{{ match.notes|linebreaksbr }}</dd>
     {% endif %}
   </dl>
+
+  <hr>
+
+  <h2>裁判安排</h2>
+
+  <p>
+    发布状态：{{ match.get_assignment_status_display }}
+    {% if match.published_at %}
+      <span class="muted">
+        · {{ match.published_at|date:"Y年n月j日 H:i" }}发布
+      </span>
+    {% endif %}
+  </p>
+
+  {% if perms.scheduling.add_assignment and perms.scheduling.change_assignment %}
+    <p>
+      <a class="button-link"
+         href="{% url 'scheduling:assignment_update' match.pk %}">
+        安排裁判
+      </a>
+    </p>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>岗位</th>
+        <th>裁判员</th>
+        <th>反馈状态</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in assignment_rows %}
+        <tr>
+          <td>{{ row.position_name }}</td>
+
+          {% if row.assignment %}
+            <td>{{ row.assignment.referee }}</td>
+            <td>
+              {{ row.assignment.get_response_status_display }}
+              {% if row.assignment.response_note %}
+                <div class="muted">
+                  {{ row.assignment.response_note|linebreaksbr }}
+                </div>
+              {% endif %}
+            </td>
+          {% else %}
+            <td class="muted">暂未安排</td>
+            <td class="muted">—</td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </section>
 {% endblock %}

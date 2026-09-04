@@ -22,4 +22,9 @@ urlpatterns = [
         views.match_update,
         name="match_update",
     ),
+    path(
+        "matches/<int:pk>/assignments/edit/",
+        views.assignment_update,
+        name="assignment_update",
+    ),
 ]

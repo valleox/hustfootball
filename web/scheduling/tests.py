@@ -8,7 +8,14 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Competition, Match, Team, Venue
+from .models import (
+    Assignment,
+    Competition,
+    Match,
+    RefereeProfile,
+    Team,
+    Venue,
+)
 
 
 class MatchPagePermissionTests(TestCase):
@@ -219,4 +226,229 @@ class MatchPagePermissionTests(TestCase):
         self.assertEqual(
             Match.objects.count(),
             original_count,
+        )
+
+class AssignmentPageTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("setup_roles", stdout=StringIO())
+
+        user_model = get_user_model()
+        cls.scheduler = user_model.objects.create_user(
+            username="assignment_scheduler",
+            password="test-password",
+        )
+        cls.recorder = user_model.objects.create_user(
+            username="assignment_recorder",
+            password="test-password",
+        )
+
+        cls.scheduler.groups.add(
+            Group.objects.get(name="排班管理员")
+        )
+        cls.recorder.groups.add(
+            Group.objects.get(name="场次录入员")
+        )
+
+        cls.competition = Competition.objects.create(
+            name="排班测试联赛",
+            season="2026测试赛季",
+        )
+        cls.home_team = Team.objects.create(name="排班测试主队")
+        cls.away_team = Team.objects.create(name="排班测试客队")
+        cls.venue = Venue.objects.create(name="排班测试场地")
+
+        cls.match = Match.objects.create(
+            competition=cls.competition,
+            kickoff_at=timezone.now() + timedelta(days=1),
+            home_team=cls.home_team,
+            away_team=cls.away_team,
+            venue=cls.venue,
+            assignment_status=Match.AssignmentStatus.PUBLISHED,
+            published_at=timezone.now(),
+            created_by=cls.scheduler,
+        )
+
+        cls.referees = []
+        for index in range(1, 6):
+            user = user_model.objects.create_user(
+                username=f"assignment_referee_{index}",
+                password="test-password",
+            )
+            cls.referees.append(
+                RefereeProfile.objects.create(
+                    user=user,
+                    name=f"测试裁判{index}",
+                )
+            )
+
+        positions = [
+            Assignment.Position.REFEREE,
+            Assignment.Position.ASSISTANT_1,
+            Assignment.Position.ASSISTANT_2,
+            Assignment.Position.FOURTH_OFFICIAL,
+        ]
+        statuses = [
+            Assignment.ResponseStatus.CONFIRMED,
+            Assignment.ResponseStatus.LEAVE,
+            Assignment.ResponseStatus.CONFIRMED,
+            Assignment.ResponseStatus.PENDING,
+        ]
+
+        for index, position in enumerate(positions):
+            Assignment.objects.create(
+                match=cls.match,
+                referee=cls.referees[index],
+                position=position,
+                response_status=statuses[index],
+                response_note=f"原反馈{index + 1}",
+                responded_at=timezone.now(),
+                assigned_by=cls.scheduler,
+            )
+
+    def form_data(self, **changes):
+        data = {
+            "referee": self.referees[0].pk,
+            "assistant_1": self.referees[1].pk,
+            "assistant_2": self.referees[2].pk,
+            "fourth_official": self.referees[3].pk,
+        }
+        data.update(changes)
+        return data
+
+    def test_only_scheduler_can_open_assignment_form(self):
+        url = reverse(
+            "scheduling:assignment_update",
+            args=[self.match.pk],
+        )
+
+        self.client.force_login(self.recorder)
+        recorder_response = self.client.get(url)
+        self.assertEqual(recorder_response.status_code, 403)
+
+        self.client.force_login(self.scheduler)
+        scheduler_response = self.client.get(url)
+        self.assertEqual(scheduler_response.status_code, 200)
+
+    def test_duplicate_referee_is_rejected(self):
+        self.client.force_login(self.scheduler)
+
+        response = self.client.post(
+            reverse(
+                "scheduling:assignment_update",
+                args=[self.match.pk],
+            ),
+            self.form_data(
+                assistant_1=self.referees[0].pk,
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "该裁判已经被安排为主裁判。",
+        )
+
+        self.match.refresh_from_db()
+        self.assertEqual(
+            self.match.assignment_status,
+            Match.AssignmentStatus.PUBLISHED,
+        )
+
+    def test_only_changed_position_feedback_is_reset(self):
+        unchanged = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.ASSISTANT_1,
+        )
+        unchanged_pk = unchanged.pk
+        unchanged_responded_at = unchanged.responded_at
+
+        self.client.force_login(self.scheduler)
+        response = self.client.post(
+            reverse(
+                "scheduling:assignment_update",
+                args=[self.match.pk],
+            ),
+            self.form_data(
+                referee=self.referees[4].pk,
+            ),
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        changed = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        unchanged = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.ASSISTANT_1,
+        )
+
+        self.assertEqual(changed.referee, self.referees[4])
+        self.assertEqual(
+            changed.response_status,
+            Assignment.ResponseStatus.PENDING,
+        )
+        self.assertEqual(changed.response_note, "")
+        self.assertIsNone(changed.responded_at)
+
+        self.assertEqual(unchanged.pk, unchanged_pk)
+        self.assertEqual(
+            unchanged.response_status,
+            Assignment.ResponseStatus.LEAVE,
+        )
+        self.assertEqual(unchanged.response_note, "原反馈2")
+        self.assertEqual(
+            unchanged.responded_at,
+            unchanged_responded_at,
+        )
+
+        self.match.refresh_from_db()
+        self.assertEqual(
+            self.match.assignment_status,
+            Match.AssignmentStatus.DRAFT,
+        )
+        self.assertIsNone(self.match.published_at)
+
+    def test_referees_can_swap_positions(self):
+        self.client.force_login(self.scheduler)
+
+        response = self.client.post(
+            reverse(
+                "scheduling:assignment_update",
+                args=[self.match.pk],
+            ),
+            self.form_data(
+                referee=self.referees[1].pk,
+                assistant_1=self.referees[0].pk,
+            ),
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        referee_assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        assistant_assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.ASSISTANT_1,
+        )
+
+        self.assertEqual(
+            referee_assignment.referee,
+            self.referees[1],
+        )
+        self.assertEqual(
+            assistant_assignment.referee,
+            self.referees[0],
+        )
+        self.assertEqual(
+            referee_assignment.response_status,
+            Assignment.ResponseStatus.PENDING,
+        )
+        self.assertEqual(
+            assistant_assignment.response_status,
+            Assignment.ResponseStatus.PENDING,
         )
