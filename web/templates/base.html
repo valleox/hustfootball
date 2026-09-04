@@ -64,6 +64,61 @@
     .full-width { width: 100%; }
     .errorlist { color: #b42318; padding-left: 20px; }
     .notice { padding: 12px; background: #e6f2eb; border-radius: 6px; }
+    .button-link {
+      display: inline-block;
+      min-height: 44px;
+      padding: 9px 18px;
+      border-radius: 6px;
+      background: #146c52;
+      color: white;
+      text-decoration: none;
+    }
+    .match-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .match-list + h2 { margin-top: 32px; }
+    .match-item {
+      display: grid;
+      gap: 4px;
+      padding: 16px;
+      border: 1px solid #dce5e0;
+      border-radius: 8px;
+      background: #fbfdfc;
+      color: inherit;
+      text-decoration: none;
+    }
+    .match-item:hover {
+      border-color: #146c52;
+      background: #f1f8f5;
+    }
+    .match-teams {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .detail-list {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr);
+      gap: 12px 20px;
+      margin-bottom: 0;
+    }
+    .detail-list dt {
+      color: #59675f;
+      font-weight: 700;
+    }
+    .detail-list dd { margin: 0; }
+
+    @media (max-width: 600px) {
+      .card { padding: 18px; }
+      .detail-list {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+      .detail-list dd { margin-bottom: 12px; }
+    }
   </style>
 </head>
 <body>

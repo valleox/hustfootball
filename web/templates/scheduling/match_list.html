@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}比赛列表 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>比赛列表</h1>
+  <p class="muted">查看已经录入系统的比赛场次。</p>
+
+  <h2>今天及之后的比赛</h2>
+  <ul class="match-list">
+    {% for match in upcoming_matches %}
+      <li>
+        <a class="match-item"
+           href="{% url 'scheduling:match_detail' match.pk %}">
+          <strong>
+            {{ match.kickoff_at|date:"Y年n月j日 H:i" }}
+          </strong>
+          <span class="match-teams">
+            {{ match.home_team }} vs {{ match.away_team }}
+          </span>
+          <span class="muted">
+            {{ match.competition }} · {{ match.venue }}
+            · {{ match.get_status_display }}
+          </span>
+        </a>
+      </li>
+    {% empty %}
+      <li class="muted">目前没有今天及之后的比赛。</li>
+    {% endfor %}
+  </ul>
+
+  <h2>历史比赛</h2>
+  <ul class="match-list">
+    {% for match in past_matches %}
+      <li>
+        <a class="match-item"
+           href="{% url 'scheduling:match_detail' match.pk %}">
+          <strong>
+            {{ match.kickoff_at|date:"Y年n月j日 H:i" }}
+          </strong>
+          <span class="match-teams">
+            {{ match.home_team }} vs {{ match.away_team }}
+          </span>
+          <span class="muted">
+            {{ match.competition }} · {{ match.venue }}
+            · {{ match.get_status_display }}
+          </span>
+        </a>
+      </li>
+    {% empty %}
+      <li class="muted">目前没有历史比赛。</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

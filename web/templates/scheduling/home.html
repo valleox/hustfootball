@@ -21,12 +21,23 @@
     {% endfor %}
   </ul>
 
+  {% if perms.scheduling.view_match %}
+    <h2>比赛管理</h2>
+    <p>查看比赛时间、参赛球队、场地和比赛状态。</p>
+    <p>
+      <a class="button-link"
+         href="{% url 'scheduling:match_list' %}">
+        查看比赛列表
+      </a>
+    </p>
+  {% endif %}
+
   {% if user.is_staff %}
     <p><a href="{% url 'admin:index' %}">进入管理后台</a></p>
   {% endif %}
 
   <p class="muted">
-    比赛管理和裁判安排功能将在后续步骤接入。
+    比赛录入、修改和裁判安排功能将在后续步骤接入。
   </p>
 </section>
 {% endblock %}
