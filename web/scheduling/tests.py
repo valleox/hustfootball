@@ -7,7 +7,9 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from django.contrib.admin.sites import AdminSite
 
+from .admin import RefereeProfileAdmin
 from .models import (
     Assignment,
     Competition,
@@ -672,3 +674,37 @@ class AssignmentPageTests(TestCase):
             "目前没有已发布的近期裁判安排。",
         )
         self.assertNotContains(response, "排班测试主队")
+
+class RefereeProfileAdminTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("setup_roles", stdout=StringIO())
+
+        user_model = get_user_model()
+        cls.user = user_model.objects.create_user(
+            username="new_referee",
+            password="test-password",
+        )
+
+    def test_saving_profile_adds_referee_group(self):
+        profile = RefereeProfile(
+            user=self.user,
+            name="新建测试裁判",
+        )
+        model_admin = RefereeProfileAdmin(
+            RefereeProfile,
+            AdminSite(),
+        )
+
+        model_admin.save_model(
+            request=None,
+            obj=profile,
+            form=None,
+            change=False,
+        )
+
+        self.assertTrue(
+            self.user.groups.filter(
+                name="裁判员"
+            ).exists()
+        )
