@@ -6,13 +6,22 @@
 <section class="card">
   <h1>比赛列表</h1>
   <p class="muted">查看已经录入系统的比赛场次。</p>
-  {% if perms.scheduling.add_match %}
-    <p>
-      <a class="button-link"
-         href="{% url 'scheduling:match_create' %}">
-        录入新比赛
-      </a>
-    </p>
+  {% if perms.scheduling.add_match or perms.scheduling.publish_assignments %}
+    <div class="form-actions">
+      {% if perms.scheduling.add_match %}
+        <a class="button-link"
+           href="{% url 'scheduling:match_create' %}">
+          录入新比赛
+        </a>
+      {% endif %}
+
+      {% if perms.scheduling.publish_assignments %}
+        <a class="button-link"
+           href="{% url 'scheduling:assignment_export' %}">
+          导出已发布安排
+        </a>
+      {% endif %}
+    </div>
   {% endif %}
 
   <h2>今天及之后的比赛</h2>

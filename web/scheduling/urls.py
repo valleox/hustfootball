@@ -8,6 +8,11 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("matches/", views.match_list, name="match_list"),
     path(
+        "matches/export/",
+        views.assignment_export,
+        name="assignment_export",
+    ),
+    path(
         "matches/new/",
         views.match_create,
         name="match_create",

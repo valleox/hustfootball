@@ -1,5 +1,5 @@
-from datetime import timedelta
-from io import StringIO
+from datetime import datetime, timedelta
+from io import BytesIO, StringIO
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -8,6 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.admin.sites import AdminSite
+from openpyxl import load_workbook
 
 from .admin import RefereeProfileAdmin
 from .models import (
@@ -674,6 +675,229 @@ class AssignmentPageTests(TestCase):
             "目前没有已发布的近期裁判安排。",
         )
         self.assertNotContains(response, "排班测试主队")
+
+    def test_only_scheduler_can_export_assignments(self):
+        export_url = reverse(
+            "scheduling:assignment_export"
+        )
+
+        self.client.force_login(self.recorder)
+
+        recorder_response = self.client.get(export_url)
+        recorder_list_response = self.client.get(
+            reverse("scheduling:match_list")
+        )
+
+        self.assertEqual(
+            recorder_response.status_code,
+            403,
+        )
+        self.assertNotContains(
+            recorder_list_response,
+            "导出已发布安排",
+        )
+
+        self.client.force_login(self.scheduler)
+
+        scheduler_response = self.client.get(export_url)
+        scheduler_list_response = self.client.get(
+            reverse("scheduling:match_list")
+        )
+
+        self.assertEqual(
+            scheduler_response.status_code,
+            200,
+        )
+        self.assertEqual(
+            scheduler_response["Content-Type"],
+            (
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+        )
+        self.assertIn(
+            ".xlsx",
+            scheduler_response["Content-Disposition"],
+        )
+        self.assertContains(
+            scheduler_list_response,
+            "导出已发布安排",
+        )
+
+    def test_export_contains_published_assignment_data(self):
+        self.client.force_login(self.scheduler)
+
+        response = self.client.get(
+            reverse("scheduling:assignment_export")
+        )
+
+        workbook = load_workbook(
+            filename=BytesIO(response.content)
+        )
+
+        try:
+            worksheet = workbook["裁判安排"]
+
+            self.assertEqual(
+                worksheet["A1"].value,
+                "足协裁判安排表",
+            )
+
+            headers = [
+                worksheet.cell(
+                    row=3,
+                    column=column_number,
+                ).value
+                for column_number in range(1, 20)
+            ]
+
+            self.assertEqual(
+                headers,
+                [
+                    "赛事",
+                    "赛季",
+                    "场次编号",
+                    "轮次",
+                    "开球时间",
+                    "主队",
+                    "客队",
+                    "比赛场地",
+                    "赛事级别",
+                    "比赛状态",
+                    "主裁判",
+                    "主裁反馈",
+                    "第一助理裁判",
+                    "第一助理反馈",
+                    "第二助理裁判",
+                    "第二助理反馈",
+                    "第四官员",
+                    "第四官员反馈",
+                    "安排发布时间",
+                ],
+            )
+
+            row_values = [
+                worksheet.cell(
+                    row=4,
+                    column=column_number,
+                ).value
+                for column_number in range(1, 20)
+            ]
+
+            self.assertEqual(
+                row_values[0],
+                "排班测试联赛",
+            )
+            self.assertEqual(
+                row_values[1],
+                "2026测试赛季",
+            )
+            self.assertIsInstance(
+                row_values[4],
+                datetime,
+            )
+            self.assertEqual(
+                row_values[5],
+                "排班测试主队",
+            )
+            self.assertEqual(
+                row_values[6],
+                "排班测试客队",
+            )
+            self.assertEqual(
+                row_values[7],
+                "排班测试场地",
+            )
+            self.assertEqual(
+                row_values[10],
+                "测试裁判1",
+            )
+            self.assertEqual(
+                row_values[11],
+                "已经确认",
+            )
+            self.assertEqual(
+                row_values[12],
+                "测试裁判2",
+            )
+            self.assertEqual(
+                row_values[13],
+                "申请请假",
+            )
+            self.assertEqual(
+                row_values[14],
+                "测试裁判3",
+            )
+            self.assertEqual(
+                row_values[15],
+                "已经确认",
+            )
+            self.assertEqual(
+                row_values[16],
+                "测试裁判4",
+            )
+            self.assertEqual(
+                row_values[17],
+                "待确认",
+            )
+            self.assertIsInstance(
+                row_values[18],
+                datetime,
+            )
+
+            self.assertEqual(
+                worksheet["E4"].number_format,
+                "yyyy-mm-dd hh:mm",
+            )
+            self.assertEqual(
+                worksheet["S4"].number_format,
+                "yyyy-mm-dd hh:mm",
+            )
+            self.assertEqual(
+                worksheet.freeze_panes,
+                "A4",
+            )
+            self.assertEqual(
+                worksheet.auto_filter.ref,
+                "A3:S4",
+            )
+        finally:
+            workbook.close()
+
+    def test_export_excludes_draft_assignments(self):
+        self.match.assignment_status = (
+            Match.AssignmentStatus.DRAFT
+        )
+        self.match.published_at = None
+        self.match.save()
+
+        self.client.force_login(self.scheduler)
+
+        response = self.client.get(
+            reverse("scheduling:assignment_export")
+        )
+
+        workbook = load_workbook(
+            filename=BytesIO(response.content)
+        )
+
+        try:
+            worksheet = workbook["裁判安排"]
+
+            self.assertEqual(
+                worksheet.max_row,
+                3,
+            )
+            self.assertNotIn(
+                "排班测试主队",
+                [
+                    cell.value
+                    for row in worksheet.iter_rows()
+                    for cell in row
+                ],
+            )
+        finally:
+            workbook.close()
 
 class RefereeProfileAdminTests(TestCase):
     @classmethod
