@@ -38,6 +38,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -103,22 +104,53 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {
+        "BACKEND": (
+            "django.core.files.storage.FileSystemStorage"
+        ),
+    },
+    "staticfiles": {
+        "BACKEND": (
+            "whitenoise.storage."
+            "CompressedManifestStaticFilesStorage"
+        ),
+    },
+}
 
 
 # Referee System settings
 import os
 
+
+def env_list(name, default=""):
+    return [
+        value.strip()
+        for value in os.environ.get(name, default).split(",")
+        if value.strip()
+    ]
+
+
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 
-ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
-    "192.168.101.100",
-    "100.112.239.94",
-]
+ALLOWED_HOSTS = env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    (
+        "127.0.0.1,"
+        "localhost,"
+        "192.168.101.100,"
+        "100.112.239.94"
+    ),
+)
+
+CSRF_TRUSTED_ORIGINS = env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS"
+)
 
 DATABASES = {
     "default": {
@@ -128,11 +160,51 @@ DATABASES = {
         "PASSWORD": os.environ["POSTGRES_PASSWORD"],
         "HOST": "db",
         "PORT": "5432",
+        "CONN_MAX_AGE": 60,
+        "CONN_HEALTH_CHECKS": True,
     }
 }
 
 TIME_ZONE = "Asia/Shanghai"
 USE_TZ = True
+
+HTTPS_ENABLED = (
+    os.environ.get("DJANGO_HTTPS_ENABLED", "0") == "1"
+)
+
+SECURE_SSL_REDIRECT = HTTPS_ENABLED
+SESSION_COOKIE_SECURE = HTTPS_ENABLED
+CSRF_COOKIE_SECURE = HTTPS_ENABLED
+
+if HTTPS_ENABLED:
+    SECURE_PROXY_SSL_HEADER = (
+        "HTTP_X_FORWARDED_PROTO",
+        "https",
+    )
+    SECURE_HSTS_SECONDS = int(
+        os.environ.get(
+            "DJANGO_SECURE_HSTS_SECONDS",
+            "3600",
+        )
+    )
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = (
+        os.environ.get(
+            "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS",
+            "0",
+        )
+        == "1"
+    )
+    SECURE_HSTS_PRELOAD = (
+        os.environ.get(
+            "DJANGO_SECURE_HSTS_PRELOAD",
+            "0",
+        )
+        == "1"
+    )
+else:
+    SECURE_HSTS_SECONDS = 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
 
 # 用户登录与退出
 LOGIN_URL = "login"
