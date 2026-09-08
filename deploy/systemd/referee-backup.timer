@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily referee database backup at 03:00 Shanghai time
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Asia/Shanghai
+Persistent=true
+Unit=referee-backup.service
+
+[Install]
+WantedBy=timers.target
