@@ -1,4 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "django"
+  "framework": "django",
+  "regions": [
+    "sin1"
+  ]
 }

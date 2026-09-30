@@ -58,3 +58,16 @@ python manage.py test --settings=config.test_settings
 修改并推送此副本；Vercel Git 集成连接此副本。
 涉及模型变更时先检查 migration，并对测试库执行迁移再部署。
 现有 Docker Compose 仍可使用 POSTGRES_* 环境变量运行。
+
+## 本次部署记录
+
+- 原始提交：2be1d4ffc15e4ed3926b7e671e431a46a134339d
+- 测试网址：https://referee-system-vercel-test.vercel.app
+- Vercel 项目：vjr6/referee-system-vercel-test
+- Vercel 应用运行区域：sin1（新加坡）
+- Neon 项目：frosty-term-15429813（aws-ap-southeast-1，PostgreSQL 17）
+- 已执行：Django migrate、setup_roles、collectstatic、本地 3 项测试。
+- 已验证：HTTPS 管理后台登录、CSS 加载、通过后台创建球队并读回。
+- 独立测试管理员：test-admin，随机密码只保存在本地忽略文件 .env.admin.json。
+- Neon 账户不允许调整自动休眠参数，保留平台默认设置。
+- 自动部署关联状态请以 Vercel 项目的 Git 设置为准。
