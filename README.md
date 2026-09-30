@@ -55,3 +55,9 @@ referee-system/
     ├── requirements.txt
     ├── config/
     └── scheduling/
+```
+
+## 独立 Vercel + Neon 测试环境
+
+此副本用于云端测试。部署配置、环境变量与迁移步骤见
+[docs/VERCEL_NEON.md](docs/VERCEL_NEON.md)。Vercel Root Directory 为 `web`。
