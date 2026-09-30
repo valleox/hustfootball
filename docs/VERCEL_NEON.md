@@ -80,8 +80,9 @@ python manage.py test --settings=config.test_settings
 npx --yes vercel@61.1.0 deploy --prod --yes --scope vjr6 --local-config web/vercel.json
 ```
 
-截至本次核对，Vercel Git 关联提示缺少 GitHub Login Connection；因此尚未启用
-推送自动部署。先在 Vercel 账户设置关联 GitHub valleox，再将本副本关联到项目。
+Vercel 已关联 GitHub 仓库 valleox/referee-system-vercel-test。
+推送到 main 会自动部署到测试网址；其他分支使用 Preview 环境。
+两类环境均使用本项目独立的 Neon 测试数据库。
 
 最终已核对部署：dpl_6R5GeqcH3QCPvnvAF8Jr8dTnUX56，状态 Ready，运行区域 sin1。
 构建服务器位于 iad1 不影响应用实际运行于 sin1。
