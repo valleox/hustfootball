@@ -71,3 +71,17 @@ python manage.py test --settings=config.test_settings
 - 独立测试管理员：test-admin，随机密码只保存在本地忽略文件 .env.admin.json。
 - Neon 账户不允许调整自动休眠参数，保留平台默认设置。
 - 自动部署关联状态请以 Vercel 项目的 Git 设置为准。
+
+## 后续手动部署
+
+在仓库根目录运行（显式使用 web 下的配置，确保区域设置生效）：
+
+```text
+npx --yes vercel@61.1.0 deploy --prod --yes --scope vjr6 --local-config web/vercel.json
+```
+
+截至本次核对，Vercel Git 关联提示缺少 GitHub Login Connection；因此尚未启用
+推送自动部署。先在 Vercel 账户设置关联 GitHub valleox，再将本副本关联到项目。
+
+最终已核对部署：dpl_6R5GeqcH3QCPvnvAF8Jr8dTnUX56，状态 Ready，运行区域 sin1。
+构建服务器位于 iad1 不影响应用实际运行于 sin1。
