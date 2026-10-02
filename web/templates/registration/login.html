@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}用户登录 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card login-card">
+  <h1>用户登录</h1>
+  <p class="muted">请使用管理员分配的账号登录。</p>
+
+  {{ form.non_field_errors }}
+
+  <form method="post" action="{% url 'login' %}">
+    {% csrf_token %}
+
+    <p>
+      <label for="{{ form.username.id_for_label }}">用户名</label>
+      {{ form.username }}
+      {{ form.username.errors }}
+    </p>
+
+    <p>
+      <label for="{{ form.password.id_for_label }}">密码</label>
+      {{ form.password }}
+      {{ form.password.errors }}
+    </p>
+
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="full-width" type="submit">登录</button>
+  </form>
+</section>
+{% endblock %}

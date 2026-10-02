@@ -1,0 +1,12 @@
+[Unit]
+Description=Referee system PostgreSQL backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=lucas
+WorkingDirectory=/home/lucas/referee-system
+ExecStart=/bin/bash /home/lucas/referee-system/scripts/backup-database.sh
+UMask=0077
+TimeoutStartSec=30min

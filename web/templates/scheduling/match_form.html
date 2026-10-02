@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p>
+    {% if match %}
+      <a href="{% url 'scheduling:match_detail' match.pk %}">
+        返回比赛详情
+      </a>
+    {% else %}
+      <a href="{% url 'scheduling:match_list' %}">
+        返回比赛列表
+      </a>
+    {% endif %}
+  </p>
+
+  <h1>{{ page_title }}</h1>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    {% for field in form %}
+      <div class="form-field">
+        <label for="{{ field.id_for_label }}">
+          {{ field.label }}
+        </label>
+
+        {{ field }}
+        {{ field.errors }}
+
+        {% if field.help_text %}
+          <div class="help-text">{{ field.help_text }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    <div class="form-actions">
+      <button type="submit">{{ submit_label }}</button>
+
+      {% if match %}
+        <a href="{% url 'scheduling:match_detail' match.pk %}">
+          取消
+        </a>
+      {% else %}
+        <a href="{% url 'scheduling:match_list' %}">
+          取消
+        </a>
+      {% endif %}
+    </div>
+  </form>
+</section>
+{% endblock %}

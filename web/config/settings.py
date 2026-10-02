@@ -42,6 +42,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -55,7 +56,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -95,7 +96,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'zh-hans'
 
 TIME_ZONE = 'UTC'
 
@@ -107,46 +108,74 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+ON_VERCEL = os.environ.get("VERCEL") == "1"
+
+# Vercel 在构建时 collectstatic 并由 CDN 提供静态文件，使用 Django 默认存储；
+# Docker 部署由 whitenoise 提供带哈希文件名的压缩静态文件。
+if not ON_VERCEL:
+    STORAGES = {
+        "default": {
+            "BACKEND": (
+                "django.core.files.storage.FileSystemStorage"
+            ),
+        },
+        "staticfiles": {
+            "BACKEND": (
+                "whitenoise.storage."
+                "CompressedManifestStaticFilesStorage"
+            ),
+        },
+    }
 
 
 # Referee System settings
+
+
+def env_list(name, default=""):
+    return [
+        value.strip()
+        for value in os.environ.get(name, default).split(",")
+        if value.strip()
+    ]
+
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 
-ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
-    "192.168.101.100",
-    "100.112.239.94",
-]
+ALLOWED_HOSTS = env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    (
+        "127.0.0.1,"
+        "localhost,"
+        "192.168.101.100,"
+        "100.112.239.94"
+    ),
+)
 
-if os.environ.get("DJANGO_ALLOWED_HOSTS"):
-    ALLOWED_HOSTS = [host.strip() for host in os.environ["DJANGO_ALLOWED_HOSTS"].split(",") if host.strip()]
+CSRF_TRUSTED_ORIGINS = env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS"
+)
 
-for variable in ("VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_BRANCH_URL"):
+for variable in (
+    "VERCEL_URL",
+    "VERCEL_PROJECT_PRODUCTION_URL",
+    "VERCEL_BRANCH_URL",
+):
     if os.environ.get(variable):
         ALLOWED_HOSTS.append(os.environ[variable])
 
-CSRF_TRUSTED_ORIGINS = [
-    origin.strip() for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origin.strip()
-]
-
-if os.environ.get("VERCEL") == "1":
+if ON_VERCEL:
     if DEBUG:
         raise ImproperlyConfigured("DJANGO_DEBUG must be 0 on Vercel.")
     if not os.environ.get("DATABASE_URL"):
         raise ImproperlyConfigured("DATABASE_URL is required on Vercel.")
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 3600
 
 if os.environ.get("DATABASE_URL"):
+    # Serverless 环境不保留长连接，连接复用交给 Neon pooler。
     DATABASES = {"default": dj_database_url.parse(
         os.environ["DATABASE_URL"], conn_max_age=0, ssl_require=True,
     )}
@@ -161,8 +190,55 @@ else:
             "PASSWORD": os.environ["POSTGRES_PASSWORD"],
             "HOST": os.environ.get("POSTGRES_HOST", "db"),
             "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+            "CONN_MAX_AGE": 60,
+            "CONN_HEALTH_CHECKS": True,
         }
     }
 
 TIME_ZONE = "Asia/Shanghai"
 USE_TZ = True
+
+# Vercel 始终通过 HTTPS 访问，因此强制开启。
+HTTPS_ENABLED = (
+    ON_VERCEL
+    or os.environ.get("DJANGO_HTTPS_ENABLED", "0") == "1"
+)
+
+SECURE_SSL_REDIRECT = HTTPS_ENABLED
+SESSION_COOKIE_SECURE = HTTPS_ENABLED
+CSRF_COOKIE_SECURE = HTTPS_ENABLED
+
+if HTTPS_ENABLED:
+    SECURE_PROXY_SSL_HEADER = (
+        "HTTP_X_FORWARDED_PROTO",
+        "https",
+    )
+    SECURE_HSTS_SECONDS = int(
+        os.environ.get(
+            "DJANGO_SECURE_HSTS_SECONDS",
+            "3600",
+        )
+    )
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = (
+        os.environ.get(
+            "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS",
+            "0",
+        )
+        == "1"
+    )
+    SECURE_HSTS_PRELOAD = (
+        os.environ.get(
+            "DJANGO_SECURE_HSTS_PRELOAD",
+            "0",
+        )
+        == "1"
+    )
+else:
+    SECURE_HSTS_SECONDS = 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
+
+# 用户登录与退出
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "scheduling:home"
+LOGOUT_REDIRECT_URL = "login"

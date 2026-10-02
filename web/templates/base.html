@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}足协裁判管理系统{% endblock %}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      color: #1f2937;
+      background: #f3f6f5;
+    }
+    a { color: #146c52; }
+    .site-header {
+      padding: 16px 20px;
+      background: #145540;
+      color: white;
+    }
+    .header-inner {
+      max-width: 900px;
+      margin: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .site-header a { color: white; text-decoration: none; }
+    .brand { font-size: 18px; font-weight: 700; }
+    main { max-width: 900px; margin: auto; padding: 24px 16px; }
+    .card {
+      padding: 24px;
+      background: white;
+      border: 1px solid #dce5e0;
+      border-radius: 12px;
+      overflow-wrap: anywhere;
+    }
+    .login-card { max-width: 440px; margin: 24px auto; }
+    h1 { margin-top: 0; font-size: 24px; }
+    .muted { color: #59675f; }
+    label { display: block; margin-bottom: 6px; font-weight: 600; }
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px;
+      border: 1px solid #87998f;
+      border-radius: 6px;
+      font: inherit;
+    }
+    button {
+      min-height: 44px;
+      padding: 8px 18px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: #146c52;
+      color: white;
+      font: inherit;
+      cursor: pointer;
+    }
+    .site-header button { border-color: white; }
+    .full-width { width: 100%; }
+    .errorlist { color: #b42318; padding-left: 20px; }
+    .notice { padding: 12px; background: #e6f2eb; border-radius: 6px; }
+    .button-link {
+      display: inline-block;
+      min-height: 44px;
+      padding: 9px 18px;
+      border-radius: 6px;
+      background: #146c52;
+      color: white;
+      text-decoration: none;
+    }
+    .match-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .match-list + h2 { margin-top: 32px; }
+    .match-item {
+      display: grid;
+      gap: 4px;
+      padding: 16px;
+      border: 1px solid #dce5e0;
+      border-radius: 8px;
+      background: #fbfdfc;
+      color: inherit;
+      text-decoration: none;
+    }
+    .match-item:hover {
+      border-color: #146c52;
+      background: #f1f8f5;
+    }
+    .match-teams {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .detail-list {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr);
+      gap: 12px 20px;
+      margin-bottom: 0;
+    }
+    .detail-list dt {
+      color: #59675f;
+      font-weight: 700;
+    }
+    .detail-list dd { margin: 0; }
+
+    textarea { resize: vertical; }
+    .form-field { margin-bottom: 18px; }
+    .help-text {
+      margin-top: 4px;
+      color: #59675f;
+      font-size: 14px;
+    }
+    .form-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 24px;
+    }
+    @media (max-width: 600px) {
+      .card { padding: 18px; }
+      .detail-list {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+      .detail-list dd { margin-bottom: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="{% url 'scheduling:home' %}">
+        足协裁判管理系统
+      </a>
+      {% if user.is_authenticated %}
+        <form method="post" action="{% url 'logout' %}">
+          {% csrf_token %}
+          <button type="submit">退出登录</button>
+        </form>
+      {% endif %}
+    </div>
+  </header>
+
+  <main>
+    {% for message in messages %}
+      <p class="notice" role="status">{{ message }}</p>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

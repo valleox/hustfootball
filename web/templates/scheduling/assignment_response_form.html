@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}裁判反馈 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p>
+    <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
+      返回比赛详情
+    </a>
+  </p>
+
+  <h1>裁判安排反馈</h1>
+
+  <h2>
+    {{ assignment.match.home_team }}
+    vs
+    {{ assignment.match.away_team }}
+  </h2>
+
+  <dl class="detail-list">
+    <dt>所属赛事</dt>
+    <dd>{{ assignment.match.competition }}</dd>
+
+    <dt>开球时间</dt>
+    <dd>
+      {{ assignment.match.kickoff_at|date:"Y年n月j日 H:i" }}
+    </dd>
+
+    <dt>比赛场地</dt>
+    <dd>{{ assignment.match.venue }}</dd>
+
+    <dt>裁判员</dt>
+    <dd>{{ assignment.referee }}</dd>
+
+    <dt>执法岗位</dt>
+    <dd>{{ assignment.get_position_display }}</dd>
+
+    <dt>当前反馈</dt>
+    <dd>{{ assignment.get_response_status_display }}</dd>
+  </dl>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    {% for field in form %}
+      <div class="form-field">
+        <label for="{{ field.id_for_label }}">
+          {{ field.label }}
+        </label>
+
+        {{ field }}
+        {{ field.errors }}
+      </div>
+    {% endfor %}
+
+    <div class="form-actions">
+      <button type="submit">提交反馈</button>
+
+      <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
+        取消
+      </a>
+    </div>
+  </form>
+</section>
+{% endblock %}

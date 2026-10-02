@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}比赛详情 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p>
+    <a href="{% url 'scheduling:match_list' %}">
+      返回比赛列表
+    </a>
+  </p>
+
+  <h1>{{ match.home_team }} vs {{ match.away_team }}</h1>
+  {% if perms.scheduling.change_match %}
+    <p>
+      <a class="button-link"
+         href="{% url 'scheduling:match_update' match.pk %}">
+        修改比赛信息
+      </a>
+    </p>
+  {% endif %}
+
+  <dl class="detail-list">
+    <dt>所属赛事</dt>
+    <dd>{{ match.competition }}</dd>
+
+    {% if match.match_number %}
+      <dt>场次编号</dt>
+      <dd>{{ match.match_number }}</dd>
+    {% endif %}
+
+    {% if match.round_name %}
+      <dt>轮次</dt>
+      <dd>{{ match.round_name }}</dd>
+    {% endif %}
+
+    <dt>开球时间</dt>
+    <dd>{{ match.kickoff_at|date:"Y年n月j日 H:i" }}</dd>
+
+    <dt>比赛场地</dt>
+    <dd>
+      {{ match.venue }}
+      {% if match.venue.address %}
+        <span class="muted">（{{ match.venue.address }}）</span>
+      {% endif %}
+    </dd>
+
+    {% if match.match_level %}
+      <dt>赛事级别</dt>
+      <dd>{{ match.match_level }}</dd>
+    {% endif %}
+
+    <dt>比赛状态</dt>
+    <dd>{{ match.get_status_display }}</dd>
+
+    {% if match.notes %}
+      <dt>比赛备注</dt>
+      <dd>{{ match.notes|linebreaksbr }}</dd>
+    {% endif %}
+  </dl>
+
+  <hr>
+
+  <h2>裁判安排</h2>
+
+  <p>
+    发布状态：{{ match.get_assignment_status_display }}
+    {% if match.published_at %}
+      <span class="muted">
+        · {{ match.published_at|date:"Y年n月j日 H:i" }}发布
+      </span>
+    {% endif %}
+  </p>
+  {% if perms.scheduling.publish_assignments and match.assignment_status == "draft" %}
+    <form method="post"
+          action="{% url 'scheduling:assignment_publish' match.pk %}">
+      {% csrf_token %}
+      <button type="submit">发布裁判安排</button>
+    </form>
+  {% endif %}
+
+  {% if perms.scheduling.add_assignment and perms.scheduling.change_assignment %}
+    <p>
+      <a class="button-link"
+         href="{% url 'scheduling:assignment_update' match.pk %}">
+        安排裁判
+      </a>
+    </p>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>岗位</th>
+        <th>裁判员</th>
+        <th>反馈状态</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in assignment_rows %}
+        <tr>
+          <td>{{ row.position_name }}</td>
+
+          {% if row.assignment %}
+            <td>{{ row.assignment.referee }}</td>
+            <td>
+              {{ row.assignment.get_response_status_display }}
+              {% if row.assignment.response_note %}
+                <div class="muted">
+                  {{ row.assignment.response_note|linebreaksbr }}
+                </div>
+              {% endif %}
+              {% if row.can_respond %}
+                <div>
+                  <a href="{% url 'scheduling:assignment_respond' row.assignment.pk %}">
+                    {% if row.assignment.response_status == "pending" %}
+                      提交反馈
+                    {% else %}
+                      修改反馈
+                    {% endif %}
+                  </a>
+                </div>
+              {% endif %}
+            </td>
+          {% else %}
+            <td class="muted">暂未安排</td>
+            <td class="muted">—</td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
