@@ -10,7 +10,9 @@
 - Framework Preset：Django
 - Python：3.13（web/.python-version）
 - 静态文件由 Vercel 自动 collectstatic 并通过 CDN 提供。
-- 首页跳转 /admin/；所有业务数据仍由 Django 后台权限保护。
+- 首页为用户面板（未登录跳转 /accounts/login/），后台仍在 /admin/。
+- VERCEL=1 时强制开启 HTTPS 相关设置，DJANGO_HTTPS_ENABLED 不需要设置；
+  静态文件使用 Django 默认存储，whitenoise 只用于 Docker 部署。
 
 环境变量（测试项目的 Production 与 Preview 都必须使用测试库）：
 
@@ -49,7 +51,7 @@ python manage.py collectstatic --noinput
 python manage.py test --settings=config.test_settings
 ```
 
-离线测试使用 SQLite，仅用于验证后台路由、登录、创建球队和角色初始化。
+离线测试使用 SQLite，覆盖页面权限、排班、发布、裁判反馈、Excel 导出和角色初始化。
 上线前另用 Neon 验证迁移、PostgreSQL 读写及 HTTPS 登录。
 `config.test_settings` 不可用于部署。
 
@@ -86,3 +88,10 @@ Vercel 已关联 GitHub 仓库 valleox/referee-system-vercel-test。
 
 最终已核对部署：dpl_6R5GeqcH3QCPvnvAF8Jr8dTnUX56，状态 Ready，运行区域 sin1。
 构建服务器位于 iad1 不影响应用实际运行于 sin1。
+
+## 2026-10-02 合并用户页面
+
+已从 valleox/referee-system 的 feature/user-pages 分支合并：登录与首页、
+比赛列表/详情/录入/修改、裁判安排、发布、裁判确认或请假、Excel 导出。
+本次没有修改模型、migration 或角色权限，测试库不需要额外操作。树莓派专用的 gunicorn、compose 健康检查与每日备份脚本一并保留，
+Vercel 不使用它们。
