@@ -64,7 +64,7 @@ python manage.py test --settings=config.test_settings
 ## 本次部署记录
 
 - 原始提交：2be1d4ffc15e4ed3926b7e671e431a46a134339d
-- 测试网址：https://referee-system-vercel-test.vercel.app
+- 测试网址：https://hustfootball.vercel.app（旧网址 https://referee-system-vercel-test.vercel.app 仍可访问）
 - Vercel 项目：vjr6/referee-system-vercel-test
 - Vercel 应用运行区域：sin1（新加坡）
 - Neon 项目：frosty-term-15429813（aws-ap-southeast-1，PostgreSQL 17）
@@ -95,3 +95,10 @@ Vercel 已关联 GitHub 仓库 valleox/referee-system-vercel-test。
 比赛列表/详情/录入/修改、裁判安排、发布、裁判确认或请假、Excel 导出。
 本次没有修改模型、migration 或角色权限，测试库不需要额外操作。树莓派专用的 gunicorn、compose 健康检查与每日备份脚本一并保留，
 Vercel 不使用它们。
+
+## 2026-10-02 更换域名
+
+在 Vercel Domains 中添加 hustfootball.vercel.app（Production）。它比旧域名短，
+Vercel 会把它作为 VERCEL_PROJECT_PRODUCTION_URL，settings.py 自动加入 ALLOWED_HOSTS，
+因此没有修改 DJANGO_ALLOWED_HOSTS / DJANGO_CSRF_TRUSTED_ORIGINS（它们是只写的 Secret）。
+同源 HTTPS 登录不需要 CSRF_TRUSTED_ORIGINS。
