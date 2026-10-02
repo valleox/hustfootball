@@ -676,6 +676,52 @@ class AssignmentPageTests(TestCase):
         )
         self.assertNotContains(response, "排班测试主队")
 
+    def test_draft_assignment_is_hidden_on_match_detail(self):
+        referee_user = self.referees[0].user
+        referee_user.groups.add(
+            Group.objects.get(name="裁判员")
+        )
+
+        self.match.assignment_status = (
+            Match.AssignmentStatus.DRAFT
+        )
+        self.match.published_at = None
+        self.match.save()
+
+        detail_url = reverse(
+            "scheduling:match_detail",
+            args=[self.match.pk],
+        )
+
+        for user in (referee_user, self.recorder):
+            self.client.force_login(user)
+            response = self.client.get(detail_url)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "本场裁判安排尚未发布。")
+            self.assertNotContains(response, "测试裁判1")
+
+        self.client.force_login(self.scheduler)
+        response = self.client.get(detail_url)
+        self.assertContains(response, "测试裁判1")
+
+    def test_published_assignment_is_visible_on_match_detail(self):
+        referee_user = self.referees[0].user
+        referee_user.groups.add(
+            Group.objects.get(name="裁判员")
+        )
+
+        self.client.force_login(referee_user)
+        response = self.client.get(
+            reverse(
+                "scheduling:match_detail",
+                args=[self.match.pk],
+            )
+        )
+
+        self.assertContains(response, "测试裁判1")
+        self.assertNotContains(response, "本场裁判安排尚未发布。")
+
     def test_only_scheduler_can_export_assignments(self):
         export_url = reverse(
             "scheduling:assignment_export"

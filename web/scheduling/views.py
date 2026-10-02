@@ -397,10 +397,20 @@ def match_detail(request, pk):
         pk=pk,
     )
 
-    assignments_by_position = {
-        assignment.position: assignment
-        for assignment in match.assignments.all()
-    }
+    # 草稿阶段只有排班管理员可以看到裁判名单。
+    can_view_assignments = (
+        match.assignment_status
+        == Match.AssignmentStatus.PUBLISHED
+        or request.user.has_perm("scheduling.change_assignment")
+    )
+    assignments_by_position = (
+        {
+            assignment.position: assignment
+            for assignment in match.assignments.all()
+        }
+        if can_view_assignments
+        else {}
+    )
     assignment_rows = []
 
     for position, position_name in Assignment.Position.choices:
@@ -426,6 +436,7 @@ def match_detail(request, pk):
         {
             "match": match,
             "assignment_rows": assignment_rows,
+            "can_view_assignments": can_view_assignments,
         },
     )
 

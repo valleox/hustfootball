@@ -88,6 +88,9 @@
     </p>
   {% endif %}
 
+  {% if not can_view_assignments %}
+    <p class="muted">本场裁判安排尚未发布。</p>
+  {% else %}
   <table>
     <thead>
       <tr>
@@ -130,5 +133,6 @@
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}
 </section>
 {% endblock %}
