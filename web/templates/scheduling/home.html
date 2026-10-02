@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}系统首页 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>欢迎，{{ user.get_username }}</h1>
+
+  <h2>当前角色</h2>
+  <ul>
+    {% if user.is_superuser %}
+      <li>超级管理员</li>
+    {% endif %}
+
+    {% for group in user.groups.all %}
+      <li>{{ group.name }}</li>
+    {% empty %}
+      {% if not user.is_superuser %}
+        <li>尚未分配角色，请联系管理员。</li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+
+  {% if has_referee_profile and perms.scheduling.view_match %}
+    <h2>我的裁判安排</h2>
+
+    {% if pending_assignments %}
+      <h3>待确认</h3>
+      <ul>
+        {% for assignment in pending_assignments %}
+          <li>
+            <strong>
+              {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
+              {{ assignment.match.home_team }}
+              vs
+              {{ assignment.match.away_team }}
+            </strong>
+            <br>
+            {{ assignment.get_position_display }}
+            · {{ assignment.match.venue }}
+            <br>
+            <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
+              查看详情
+            </a>
+            ·
+            <a href="{% url 'scheduling:assignment_respond' assignment.pk %}">
+              提交反馈
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if upcoming_assignments %}
+      <h3>其他近期安排</h3>
+      <ul>
+        {% for assignment in upcoming_assignments %}
+          <li>
+            <strong>
+              {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
+              {{ assignment.match.home_team }}
+              vs
+              {{ assignment.match.away_team }}
+            </strong>
+            <br>
+            {{ assignment.get_position_display }}
+            · {{ assignment.get_response_status_display }}
+            · {{ assignment.match.venue }}
+            <br>
+            <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
+              查看详情
+            </a>
+            ·
+            <a href="{% url 'scheduling:assignment_respond' assignment.pk %}">
+              修改反馈
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if not pending_assignments and not upcoming_assignments %}
+      <p class="muted">目前没有已发布的近期裁判安排。</p>
+    {% endif %}
+  {% endif %}
+
+  {% if perms.scheduling.view_match %}
+    <h2>比赛管理</h2>
+    <p>查看比赛时间、参赛球队、场地和裁判安排。</p>
+
+    <div class="form-actions">
+      <a class="button-link"
+         href="{% url 'scheduling:match_list' %}">
+        查看比赛列表
+      </a>
+
+      {% if perms.scheduling.add_match %}
+        <a class="button-link"
+           href="{% url 'scheduling:match_create' %}">
+          录入新比赛
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if user.is_staff %}
+    <p>
+      <a href="{% url 'admin:index' %}">
+        进入管理后台
+      </a>
+    </p>
+  {% endif %}
+</section>
+{% endblock %}

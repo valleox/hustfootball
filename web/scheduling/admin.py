@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.contrib.auth.models import Group
 from django.utils import timezone
 
 from .models import (
@@ -51,6 +52,16 @@ class RefereeProfileAdmin(admin.ModelAdmin):
     search_fields = ("name", "phone", "user__username")
     autocomplete_fields = ("user",)
     list_select_related = ("user",)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+
+        referee_group = Group.objects.filter(
+            name="裁判员"
+        ).first()
+
+        if referee_group is not None:
+            obj.user.groups.add(referee_group)
 
 
 class AssignmentInline(admin.TabularInline):

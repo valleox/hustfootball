@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}裁判安排 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p>
+    <a href="{% url 'scheduling:match_detail' match.pk %}">
+      返回比赛详情
+    </a>
+  </p>
+
+  <h1>裁判安排</h1>
+
+  <p class="muted">
+    {{ match.competition }} ·
+    {{ match.kickoff_at|date:"Y年n月j日 H:i" }}
+  </p>
+
+  <h2>
+    {{ match.home_team }} vs {{ match.away_team }}
+  </h2>
+
+  {% if match.assignment_status == "published" %}
+    <p class="muted">
+      当前安排已经发布。保存变动后，本场安排会退回草稿。
+      只有被更换岗位的反馈会被重置。
+    </p>
+  {% else %}
+    <p class="muted">
+      可以分次填写并保存。未安排的岗位可暂时留空。
+    </p>
+  {% endif %}
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    {% for field in form %}
+      <div class="form-field">
+        <label for="{{ field.id_for_label }}">
+          {{ field.label }}
+        </label>
+
+        {{ field }}
+        {{ field.errors }}
+      </div>
+    {% endfor %}
+
+    <div class="form-actions">
+      <button type="submit">保存裁判安排</button>
+
+      <a href="{% url 'scheduling:match_detail' match.pk %}">
+        取消
+      </a>
+    </div>
+  </form>
+</section>
+{% endblock %}
