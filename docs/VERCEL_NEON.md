@@ -64,7 +64,7 @@ python manage.py test --settings=config.test_settings
 ## 本次部署记录
 
 - 原始提交：2be1d4ffc15e4ed3926b7e671e431a46a134339d
-- 测试网址：https://hustfootball.vercel.app（旧网址 https://referee-system-vercel-test.vercel.app 仍可访问）
+- 测试网址：https://hustfootball.vercel.app（旧网址 https://referee-system-vercel-test.vercel.app 以 308 永久跳转到新网址，路径和参数保留）
 - Vercel 项目：vjr6/referee-system-vercel-test
 - Vercel 应用运行区域：sin1（新加坡）
 - Neon 项目：frosty-term-15429813（aws-ap-southeast-1，PostgreSQL 17）
