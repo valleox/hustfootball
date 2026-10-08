@@ -71,7 +71,7 @@
       </span>
     {% endif %}
   </p>
-  {% if perms.scheduling.publish_assignments and match.assignment_status == "draft" %}
+  {% if perms.scheduling.publish_assignments and match.assignment_status == "draft" and match.status == "scheduled" %}
     <form method="post"
           action="{% url 'scheduling:assignment_publish' match.pk %}">
       {% csrf_token %}

@@ -32,6 +32,10 @@
     </p>
   {% endif %}
 
+  <p class="muted">
+    同一裁判在开球前后 2 小时内已有其他比赛时，系统会提示时间冲突（已取消的比赛除外）。
+  </p>
+
   <form method="post" novalidate>
     {% csrf_token %}
     {{ form.non_field_errors }}

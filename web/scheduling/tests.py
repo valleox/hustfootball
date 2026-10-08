@@ -509,6 +509,43 @@ class AssignmentPageTests(TestCase):
         )
         self.assertIsNone(self.match.published_at)
 
+    def test_cancelled_or_finished_match_cannot_be_published(self):
+        for status in (
+            Match.Status.CANCELLED,
+            Match.Status.FINISHED,
+        ):
+            with self.subTest(status=status):
+                self.match.assignment_status = (
+                    Match.AssignmentStatus.DRAFT
+                )
+                self.match.published_at = None
+                self.match.status = status
+                self.match.save()
+
+                self.client.force_login(self.scheduler)
+                detail_url = reverse(
+                    "scheduling:match_detail",
+                    args=[self.match.pk],
+                )
+                detail = self.client.get(detail_url)
+                self.assertNotContains(detail, "发布裁判安排</button>")
+
+                response = self.client.post(
+                    reverse(
+                        "scheduling:assignment_publish",
+                        args=[self.match.pk],
+                    ),
+                    follow=True,
+                )
+
+                self.assertContains(response, "不能发布裁判安排")
+                self.match.refresh_from_db()
+                self.assertEqual(
+                    self.match.assignment_status,
+                    Match.AssignmentStatus.DRAFT,
+                )
+                self.assertIsNone(self.match.published_at)
+
     def test_recorder_cannot_publish_assignments(self):
         self.match.assignment_status = (
             Match.AssignmentStatus.DRAFT
@@ -675,6 +712,145 @@ class AssignmentPageTests(TestCase):
             "目前没有已发布的近期裁判安排。",
         )
         self.assertNotContains(response, "排班测试主队")
+
+    def create_other_match(self, hours_later, **changes):
+        other_home = Team.objects.create(name=f"冲突主队{hours_later}")
+        other_away = Team.objects.create(name=f"冲突客队{hours_later}")
+        data = {
+            "competition": self.competition,
+            "kickoff_at": (
+                self.match.kickoff_at + timedelta(hours=hours_later)
+            ),
+            "home_team": other_home,
+            "away_team": other_away,
+            "venue": self.venue,
+        }
+        data.update(changes)
+        return Match.objects.create(**data)
+
+    def post_assignments(self, **changes):
+        self.client.force_login(self.scheduler)
+        return self.client.post(
+            reverse(
+                "scheduling:assignment_update",
+                args=[self.match.pk],
+            ),
+            self.form_data(**changes),
+        )
+
+    def test_overlapping_assignment_is_rejected(self):
+        other_match = self.create_other_match(1)
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "时间冲突")
+        self.assertContains(response, "冲突主队1 vs 冲突客队1")
+        self.assertEqual(
+            Assignment.objects.get(
+                match=self.match,
+                position=Assignment.Position.FOURTH_OFFICIAL,
+            ).referee,
+            self.referees[3],
+        )
+
+    def test_assignment_outside_conflict_window_is_allowed(self):
+        other_match = self.create_other_match(3)
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_cancelled_match_does_not_cause_conflict(self):
+        other_match = self.create_other_match(
+            1,
+            status=Match.Status.CANCELLED,
+        )
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_existing_conflict_does_not_block_other_changes(self):
+        other_match = self.create_other_match(1)
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[0],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_scheduler_home_lists_upcoming_leave_requests(self):
+        self.client.force_login(self.scheduler)
+
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertContains(response, "待处理请假")
+        self.assertContains(response, "测试裁判2")
+        self.assertContains(response, "请假说明：原反馈2")
+        self.assertContains(
+            response,
+            reverse(
+                "scheduling:assignment_update",
+                args=[self.match.pk],
+            ),
+        )
+
+    def test_leave_requests_skip_cancelled_and_past_matches(self):
+        past_match = Match.objects.create(
+            competition=self.competition,
+            kickoff_at=timezone.now() - timedelta(days=3),
+            home_team=Team.objects.create(name="过去主队"),
+            away_team=Team.objects.create(name="过去客队"),
+            venue=self.venue,
+        )
+        Assignment.objects.create(
+            match=past_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+            response_status=Assignment.ResponseStatus.LEAVE,
+        )
+        self.match.status = Match.Status.CANCELLED
+        self.match.save()
+
+        self.client.force_login(self.scheduler)
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertContains(response, "目前没有待处理的请假。")
+        self.assertNotContains(response, "过去主队")
+
+    def test_leave_requests_are_hidden_from_recorder(self):
+        self.client.force_login(self.recorder)
+
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertNotContains(response, "待处理请假")
 
     def test_draft_assignment_is_hidden_on_match_detail(self):
         referee_user = self.referees[0].user
@@ -996,11 +1172,18 @@ class DeploymentSmokeTests(TestCase):
             "admin@example.test",
             "test-password",
         )
-        self.assertTrue(
-            self.client.login(
-                username="smoke-admin",
-                password="test-password",
-            )
+        login_response = self.client.post(
+            reverse("admin:login"),
+            {
+                "username": "smoke-admin",
+                "password": "test-password",
+                "next": reverse("admin:index"),
+            },
+        )
+        self.assertRedirects(
+            login_response,
+            reverse("admin:index"),
+            fetch_redirect_response=False,
         )
         response = self.client.post(
             reverse("admin:scheduling_team_add"),
@@ -1035,3 +1218,139 @@ class DeploymentSmokeTests(TestCase):
         self.assertEqual(before, after)
         self.assertEqual(len(after), 3)
         self.assertTrue(all(after.values()))
+
+
+class LoginLockoutTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="lockout_user",
+            password="correct-password",
+        )
+        self.login_url = reverse("login")
+
+    def post_login(self, password):
+        return self.client.post(
+            self.login_url,
+            {"username": "lockout_user", "password": password},
+        )
+
+    def test_account_is_locked_after_five_failures(self):
+        for _attempt in range(5):
+            self.post_login("wrong-password")
+
+        response = self.post_login("correct-password")
+
+        self.assertEqual(response.status_code, 429)
+        self.assertContains(
+            response,
+            "账号暂时锁定",
+            status_code=429,
+        )
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_successful_login_resets_failure_count(self):
+        for _attempt in range(4):
+            self.post_login("wrong-password")
+
+        success = self.post_login("correct-password")
+        self.assertEqual(success.status_code, 302)
+        self.client.post(reverse("logout"))
+
+        for _attempt in range(4):
+            self.post_login("wrong-password")
+
+        response = self.post_login("correct-password")
+        self.assertEqual(response.status_code, 302)
+
+    def test_other_accounts_are_not_locked(self):
+        get_user_model().objects.create_user(
+            username="other_user",
+            password="other-password",
+        )
+        for _attempt in range(5):
+            self.post_login("wrong-password")
+
+        response = self.client.post(
+            self.login_url,
+            {"username": "other_user", "password": "other-password"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+
+class PasswordChangeTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="password_user",
+            password="old-password-123",
+        )
+
+    def test_anonymous_user_is_redirected_to_login(self):
+        response = self.client.get(reverse("password_change"))
+
+        self.assertRedirects(
+            response,
+            "/accounts/login/?next=/accounts/password/",
+            fetch_redirect_response=False,
+        )
+
+    def test_user_can_change_own_password(self):
+        self.client.force_login(self.user)
+
+        page = self.client.get(reverse("scheduling:home"))
+        self.assertContains(page, reverse("password_change"))
+
+        response = self.client.post(
+            reverse("password_change"),
+            {
+                "old_password": "old-password-123",
+                "new_password1": "Football-Season-2026",
+                "new_password2": "Football-Season-2026",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("password_change_done"),
+        )
+        self.user.refresh_from_db()
+        self.assertTrue(
+            self.user.check_password("Football-Season-2026")
+        )
+
+    def test_wrong_old_password_is_rejected(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("password_change"),
+            {
+                "old_password": "not-my-password",
+                "new_password1": "Football-Season-2026",
+                "new_password2": "Football-Season-2026",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(
+            self.user.check_password("old-password-123")
+        )
+
+    def test_admin_password_change_page_keeps_admin_template(self):
+        admin = get_user_model().objects.create_superuser(
+            "password_admin",
+            "admin@example.test",
+            "admin-password-123",
+        )
+        self.client.force_login(admin)
+
+        response = self.client.get(reverse("admin:password_change"))
+
+        self.assertTemplateUsed(
+            response,
+            "registration/password_change_form.html",
+        )
+        self.assertTemplateNotUsed(
+            response,
+            "scheduling/password_change_form.html",
+        )

@@ -68,6 +68,23 @@ def home(request):
             }
         )
 
+    if request.user.has_perm("scheduling.change_assignment"):
+        context["leave_requests"] = Assignment.objects.filter(
+            response_status=Assignment.ResponseStatus.LEAVE,
+            match__kickoff_at__date__gte=timezone.localdate(),
+        ).exclude(
+            match__status=Match.Status.CANCELLED,
+        ).select_related(
+            "referee",
+            "match",
+            "match__home_team",
+            "match__away_team",
+            "match__venue",
+        ).order_by(
+            "match__kickoff_at",
+            "position",
+        )
+
     return render(
         request,
         "scheduling/home.html",
@@ -568,6 +585,16 @@ def assignment_publish(request, pk):
         == Match.AssignmentStatus.PUBLISHED
     ):
         messages.info(request, "本场裁判安排已经发布。")
+        return redirect(
+            "scheduling:match_detail",
+            pk=match.pk,
+        )
+
+    if match.status != Match.Status.SCHEDULED:
+        messages.error(
+            request,
+            f"本场比赛{match.get_status_display()}，不能发布裁判安排。",
+        )
         return redirect(
             "scheduling:match_detail",
             pk=match.pk,
