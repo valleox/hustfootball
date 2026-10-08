@@ -676,6 +676,99 @@ class AssignmentPageTests(TestCase):
         )
         self.assertNotContains(response, "排班测试主队")
 
+    def create_other_match(self, hours_later, **changes):
+        other_home = Team.objects.create(name=f"冲突主队{hours_later}")
+        other_away = Team.objects.create(name=f"冲突客队{hours_later}")
+        data = {
+            "competition": self.competition,
+            "kickoff_at": (
+                self.match.kickoff_at + timedelta(hours=hours_later)
+            ),
+            "home_team": other_home,
+            "away_team": other_away,
+            "venue": self.venue,
+        }
+        data.update(changes)
+        return Match.objects.create(**data)
+
+    def post_assignments(self, **changes):
+        self.client.force_login(self.scheduler)
+        return self.client.post(
+            reverse(
+                "scheduling:assignment_update",
+                args=[self.match.pk],
+            ),
+            self.form_data(**changes),
+        )
+
+    def test_overlapping_assignment_is_rejected(self):
+        other_match = self.create_other_match(1)
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "时间冲突")
+        self.assertContains(response, "冲突主队1 vs 冲突客队1")
+        self.assertEqual(
+            Assignment.objects.get(
+                match=self.match,
+                position=Assignment.Position.FOURTH_OFFICIAL,
+            ).referee,
+            self.referees[3],
+        )
+
+    def test_assignment_outside_conflict_window_is_allowed(self):
+        other_match = self.create_other_match(3)
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_cancelled_match_does_not_cause_conflict(self):
+        other_match = self.create_other_match(
+            1,
+            status=Match.Status.CANCELLED,
+        )
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_existing_conflict_does_not_block_other_changes(self):
+        other_match = self.create_other_match(1)
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[0],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 302)
+
     def test_draft_assignment_is_hidden_on_match_detail(self):
         referee_user = self.referees[0].user
         referee_user.groups.add(
