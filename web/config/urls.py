@@ -16,5 +16,19 @@ urlpatterns = [
         auth_views.LogoutView.as_view(),
         name="logout",
     ),
+    path(
+        "accounts/password/",
+        auth_views.PasswordChangeView.as_view(
+            template_name="scheduling/password_change_form.html",
+        ),
+        name="password_change",
+    ),
+    path(
+        "accounts/password/done/",
+        auth_views.PasswordChangeDoneView.as_view(
+            template_name="scheduling/password_change_done.html",
+        ),
+        name="password_change_done",
+    ),
     path("", include("scheduling.urls")),
 ]

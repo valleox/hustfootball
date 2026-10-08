@@ -30,6 +30,11 @@
     }
     .site-header a { color: white; text-decoration: none; }
     .brand { font-size: 18px; font-weight: 700; }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
     main { max-width: 900px; margin: auto; padding: 24px 16px; }
     .card {
       padding: 24px;
@@ -144,10 +149,13 @@
         足协裁判管理系统
       </a>
       {% if user.is_authenticated %}
-        <form method="post" action="{% url 'logout' %}">
-          {% csrf_token %}
-          <button type="submit">退出登录</button>
-        </form>
+        <div class="header-actions">
+          <a href="{% url 'password_change' %}">修改密码</a>
+          <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit">退出登录</button>
+          </form>
+        </div>
       {% endif %}
     </div>
   </header>

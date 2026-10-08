@@ -1100,3 +1100,81 @@ class LoginLockoutTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
+
+
+class PasswordChangeTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="password_user",
+            password="old-password-123",
+        )
+
+    def test_anonymous_user_is_redirected_to_login(self):
+        response = self.client.get(reverse("password_change"))
+
+        self.assertRedirects(
+            response,
+            "/accounts/login/?next=/accounts/password/",
+            fetch_redirect_response=False,
+        )
+
+    def test_user_can_change_own_password(self):
+        self.client.force_login(self.user)
+
+        page = self.client.get(reverse("scheduling:home"))
+        self.assertContains(page, reverse("password_change"))
+
+        response = self.client.post(
+            reverse("password_change"),
+            {
+                "old_password": "old-password-123",
+                "new_password1": "Football-Season-2026",
+                "new_password2": "Football-Season-2026",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("password_change_done"),
+        )
+        self.user.refresh_from_db()
+        self.assertTrue(
+            self.user.check_password("Football-Season-2026")
+        )
+
+    def test_wrong_old_password_is_rejected(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("password_change"),
+            {
+                "old_password": "not-my-password",
+                "new_password1": "Football-Season-2026",
+                "new_password2": "Football-Season-2026",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(
+            self.user.check_password("old-password-123")
+        )
+
+    def test_admin_password_change_page_keeps_admin_template(self):
+        admin = get_user_model().objects.create_superuser(
+            "password_admin",
+            "admin@example.test",
+            "admin-password-123",
+        )
+        self.client.force_login(admin)
+
+        response = self.client.get(reverse("admin:password_change"))
+
+        self.assertTemplateUsed(
+            response,
+            "registration/password_change_form.html",
+        )
+        self.assertTemplateNotUsed(
+            response,
+            "scheduling/password_change_form.html",
+        )
