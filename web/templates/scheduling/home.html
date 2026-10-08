@@ -21,6 +21,43 @@
     {% endfor %}
   </ul>
 
+  {% if perms.scheduling.change_assignment %}
+    <h2>待处理请假</h2>
+
+    {% if leave_requests %}
+      <ul>
+        {% for assignment in leave_requests %}
+          <li>
+            <strong>
+              {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
+              {{ assignment.match.home_team }}
+              vs
+              {{ assignment.match.away_team }}
+            </strong>
+            <br>
+            {{ assignment.get_position_display }}
+            · {{ assignment.referee }}
+            · {{ assignment.match.venue }}
+            {% if assignment.response_note %}
+              <div class="muted">
+                请假说明：{{ assignment.response_note|linebreaksbr }}
+              </div>
+            {% endif %}
+            <a href="{% url 'scheduling:assignment_update' assignment.match.pk %}">
+              更换裁判
+            </a>
+            ·
+            <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
+              查看详情
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">目前没有待处理的请假。</p>
+    {% endif %}
+  {% endif %}
+
   {% if has_referee_profile and perms.scheduling.view_match %}
     <h2>我的裁判安排</h2>
 

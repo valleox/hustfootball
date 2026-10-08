@@ -68,6 +68,23 @@ def home(request):
             }
         )
 
+    if request.user.has_perm("scheduling.change_assignment"):
+        context["leave_requests"] = Assignment.objects.filter(
+            response_status=Assignment.ResponseStatus.LEAVE,
+            match__kickoff_at__date__gte=timezone.localdate(),
+        ).exclude(
+            match__status=Match.Status.CANCELLED,
+        ).select_related(
+            "referee",
+            "match",
+            "match__home_team",
+            "match__away_team",
+            "match__venue",
+        ).order_by(
+            "match__kickoff_at",
+            "position",
+        )
+
     return render(
         request,
         "scheduling/home.html",

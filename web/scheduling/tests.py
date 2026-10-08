@@ -769,6 +769,52 @@ class AssignmentPageTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
 
+    def test_scheduler_home_lists_upcoming_leave_requests(self):
+        self.client.force_login(self.scheduler)
+
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertContains(response, "待处理请假")
+        self.assertContains(response, "测试裁判2")
+        self.assertContains(response, "请假说明：原反馈2")
+        self.assertContains(
+            response,
+            reverse(
+                "scheduling:assignment_update",
+                args=[self.match.pk],
+            ),
+        )
+
+    def test_leave_requests_skip_cancelled_and_past_matches(self):
+        past_match = Match.objects.create(
+            competition=self.competition,
+            kickoff_at=timezone.now() - timedelta(days=3),
+            home_team=Team.objects.create(name="过去主队"),
+            away_team=Team.objects.create(name="过去客队"),
+            venue=self.venue,
+        )
+        Assignment.objects.create(
+            match=past_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+            response_status=Assignment.ResponseStatus.LEAVE,
+        )
+        self.match.status = Match.Status.CANCELLED
+        self.match.save()
+
+        self.client.force_login(self.scheduler)
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertContains(response, "目前没有待处理的请假。")
+        self.assertNotContains(response, "过去主队")
+
+    def test_leave_requests_are_hidden_from_recorder(self):
+        self.client.force_login(self.recorder)
+
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertNotContains(response, "待处理请假")
+
     def test_draft_assignment_is_hidden_on_match_detail(self):
         referee_user = self.referees[0].user
         referee_user.groups.add(
