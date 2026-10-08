@@ -148,12 +148,7 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 
 ALLOWED_HOSTS = env_list(
     "DJANGO_ALLOWED_HOSTS",
-    (
-        "127.0.0.1,"
-        "localhost,"
-        "192.168.101.100,"
-        "100.112.239.94"
-    ),
+    "127.0.0.1,localhost",
 )
 
 CSRF_TRUSTED_ORIGINS = env_list(

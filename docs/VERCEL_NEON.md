@@ -1,11 +1,11 @@
 # Vercel + Neon 测试环境
 
-此仓库是 https://github.com/valleox/referee-system 的独立副本，保留 Git 历史。
-原 Raspberry Pi 项目与数据库不参与本测试环境的部署。
+此仓库（valleox/hustfootball）是项目的主仓库，从 valleox/referee-system 复制而来并保留 Git 历史。
+原仓库已封存，Raspberry Pi 部署暂停使用。
 
 ## Vercel 配置
 
-- 仓库：valleox/referee-system-vercel-test
+- 仓库：valleox/hustfootball
 - Root Directory：web
 - Framework Preset：Django
 - Python：3.13（web/.python-version）
@@ -61,33 +61,23 @@ python manage.py test --settings=config.test_settings
 涉及模型变更时先检查 migration，并对测试库执行迁移再部署。
 现有 Docker Compose 仍可使用 POSTGRES_* 环境变量运行。
 
-## 本次部署记录
+## 部署说明
 
-- 原始提交：2be1d4ffc15e4ed3926b7e671e431a46a134339d
-- 测试网址：https://hustfootball.vercel.app（旧网址 https://referee-system-vercel-test.vercel.app 以 308 永久跳转到新网址，路径和参数保留）
-- Vercel 项目：vjr6/referee-system-vercel-test
-- Vercel 应用运行区域：sin1（新加坡）
-- Neon 项目：frosty-term-15429813（aws-ap-southeast-1，PostgreSQL 17）
-- 已执行：Django migrate、setup_roles、collectstatic、本地 3 项测试。
-- 已验证：HTTPS 管理后台登录、CSS 加载、通过后台创建球队并读回。
-- 独立测试管理员：test-admin，随机密码只保存在本地忽略文件 .env.admin.json。
-- Neon 账户不允许调整自动休眠参数，保留平台默认设置。
-- 自动部署关联状态请以 Vercel 项目的 Git 设置为准。
+- 网址：https://hustfootball.vercel.app（旧域名以 308 永久跳转到此网址，路径和参数保留）
+- Vercel 应用运行区域：sin1（新加坡），与 Neon 数据库（aws-ap-southeast-1，PostgreSQL 17）相邻。
+  构建服务器位于 iad1 不影响应用实际运行区域。
+- 初始化时已执行 migrate、setup_roles、collectstatic，并验证 HTTPS 登录与 CSS 加载。
+- 管理员账号与密码只保存在本地，不要提交到仓库。
+- Neon 免费账户不能调整自动休眠参数，保留平台默认设置。
 
-## 后续手动部署
+推送到 main 会自动部署到正式网址；其他分支使用 Preview 环境（需登录 Vercel 才能访问）。
+两类环境都使用本项目的 Neon 数据库，Preview 中的操作同样会写入该库。
 
-在仓库根目录运行（显式使用 web 下的配置，确保区域设置生效）：
+如需手动部署，在仓库根目录运行（显式使用 web 下的配置，确保区域设置生效）：
 
 ```text
-npx --yes vercel@61.1.0 deploy --prod --yes --scope vjr6 --local-config web/vercel.json
+npx --yes vercel@61.1.0 deploy --prod --yes --scope <你的 Vercel team> --local-config web/vercel.json
 ```
-
-Vercel 已关联 GitHub 仓库 valleox/referee-system-vercel-test。
-推送到 main 会自动部署到测试网址；其他分支使用 Preview 环境。
-两类环境均使用本项目独立的 Neon 测试数据库。
-
-最终已核对部署：dpl_6R5GeqcH3QCPvnvAF8Jr8dTnUX56，状态 Ready，运行区域 sin1。
-构建服务器位于 iad1 不影响应用实际运行于 sin1。
 
 ## 2026-10-02 合并用户页面
 

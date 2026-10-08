@@ -1,8 +1,12 @@
-# Referee System
+# HUST Football 裁判管理系统
 
 足协裁判管理系统，用于录入比赛、安排裁判、发布排班、收集确认状态，并导出裁判安排。
 
-项目目前处于基础功能开发阶段，运行在 Raspberry Pi 的 Docker 环境中。
+网址：https://hustfootball.vercel.app（部署在 Vercel，数据库为 Neon PostgreSQL）。
+
+> 下方「当前进度」等章节保留了 2026 年 8 月的初版记录；之后已完成用户页面、
+> 排班发布、裁判确认/请假和 Excel 导出，部署方式见 [docs/VERCEL_NEON.md](docs/VERCEL_NEON.md)。
+> 仓库仍保留 Docker Compose 配置，可在自有服务器上运行。
 
 ## 当前进度
 
@@ -57,7 +61,7 @@ referee-system/
     └── scheduling/
 ```
 
-## 独立 Vercel + Neon 测试环境
+## Vercel + Neon 部署
 
-此副本用于云端测试。部署配置、环境变量与迁移步骤见
+部署配置、环境变量与迁移步骤见
 [docs/VERCEL_NEON.md](docs/VERCEL_NEON.md)。Vercel Root Directory 为 `web`。

@@ -992,13 +992,13 @@ class DeploymentSmokeTests(TestCase):
 
     def test_admin_can_login_and_create_team(self):
         get_user_model().objects.create_superuser(
-            "test-admin",
+            "smoke-admin",
             "admin@example.test",
             "test-password",
         )
         self.assertTrue(
             self.client.login(
-                username="test-admin",
+                username="smoke-admin",
                 password="test-password",
             )
         )
