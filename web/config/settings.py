@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 import os
 
@@ -37,6 +38,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
+    "axes",
+
     "scheduling",
 ]
 
@@ -49,6 +52,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # 必须放在最后，用于拦截被锁定账号的登录请求。
+    "axes.middleware.AxesMiddleware",
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -237,3 +242,20 @@ else:
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "scheduling:home"
 LOGOUT_REDIRECT_URL = "login"
+
+# 登录失败限制（django-axes）
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+# 同一用户名连续失败 5 次后锁定 15 分钟，成功登录后清零。
+# 只按用户名锁定，避免校园网共用出口 IP 时误锁所有人。
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = timedelta(minutes=15)
+AXES_LOCKOUT_PARAMETERS = ["username"]
+# W006 针对按 User-Agent/Cookie 组合锁定的配置；只按用户名锁定时更换它们无法绕过。
+SILENCED_SYSTEM_CHECKS = ["axes.W006"]
+AXES_RESET_ON_SUCCESS = True
+AXES_LOCKOUT_TEMPLATE = "registration/locked_out.html"
+AXES_CLIENT_IP_CALLABLE = "scheduling.auth.client_ip"

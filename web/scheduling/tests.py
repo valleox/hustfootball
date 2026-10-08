@@ -996,11 +996,18 @@ class DeploymentSmokeTests(TestCase):
             "admin@example.test",
             "test-password",
         )
-        self.assertTrue(
-            self.client.login(
-                username="smoke-admin",
-                password="test-password",
-            )
+        login_response = self.client.post(
+            reverse("admin:login"),
+            {
+                "username": "smoke-admin",
+                "password": "test-password",
+                "next": reverse("admin:index"),
+            },
+        )
+        self.assertRedirects(
+            login_response,
+            reverse("admin:index"),
+            fetch_redirect_response=False,
         )
         response = self.client.post(
             reverse("admin:scheduling_team_add"),
@@ -1035,3 +1042,61 @@ class DeploymentSmokeTests(TestCase):
         self.assertEqual(before, after)
         self.assertEqual(len(after), 3)
         self.assertTrue(all(after.values()))
+
+
+class LoginLockoutTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="lockout_user",
+            password="correct-password",
+        )
+        self.login_url = reverse("login")
+
+    def post_login(self, password):
+        return self.client.post(
+            self.login_url,
+            {"username": "lockout_user", "password": password},
+        )
+
+    def test_account_is_locked_after_five_failures(self):
+        for _attempt in range(5):
+            self.post_login("wrong-password")
+
+        response = self.post_login("correct-password")
+
+        self.assertEqual(response.status_code, 429)
+        self.assertContains(
+            response,
+            "账号暂时锁定",
+            status_code=429,
+        )
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_successful_login_resets_failure_count(self):
+        for _attempt in range(4):
+            self.post_login("wrong-password")
+
+        success = self.post_login("correct-password")
+        self.assertEqual(success.status_code, 302)
+        self.client.post(reverse("logout"))
+
+        for _attempt in range(4):
+            self.post_login("wrong-password")
+
+        response = self.post_login("correct-password")
+        self.assertEqual(response.status_code, 302)
+
+    def test_other_accounts_are_not_locked(self):
+        get_user_model().objects.create_user(
+            username="other_user",
+            password="other-password",
+        )
+        for _attempt in range(5):
+            self.post_login("wrong-password")
+
+        response = self.client.post(
+            self.login_url,
+            {"username": "other_user", "password": "other-password"},
+        )
+
+        self.assertEqual(response.status_code, 302)
