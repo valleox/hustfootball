@@ -590,6 +590,16 @@ def assignment_publish(request, pk):
             pk=match.pk,
         )
 
+    if match.status != Match.Status.SCHEDULED:
+        messages.error(
+            request,
+            f"本场比赛{match.get_status_display()}，不能发布裁判安排。",
+        )
+        return redirect(
+            "scheduling:match_detail",
+            pk=match.pk,
+        )
+
     required_positions = {
         position
         for position, _label in Assignment.Position.choices

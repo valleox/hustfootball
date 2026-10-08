@@ -509,6 +509,43 @@ class AssignmentPageTests(TestCase):
         )
         self.assertIsNone(self.match.published_at)
 
+    def test_cancelled_or_finished_match_cannot_be_published(self):
+        for status in (
+            Match.Status.CANCELLED,
+            Match.Status.FINISHED,
+        ):
+            with self.subTest(status=status):
+                self.match.assignment_status = (
+                    Match.AssignmentStatus.DRAFT
+                )
+                self.match.published_at = None
+                self.match.status = status
+                self.match.save()
+
+                self.client.force_login(self.scheduler)
+                detail_url = reverse(
+                    "scheduling:match_detail",
+                    args=[self.match.pk],
+                )
+                detail = self.client.get(detail_url)
+                self.assertNotContains(detail, "发布裁判安排</button>")
+
+                response = self.client.post(
+                    reverse(
+                        "scheduling:assignment_publish",
+                        args=[self.match.pk],
+                    ),
+                    follow=True,
+                )
+
+                self.assertContains(response, "不能发布裁判安排")
+                self.match.refresh_from_db()
+                self.assertEqual(
+                    self.match.assignment_status,
+                    Match.AssignmentStatus.DRAFT,
+                )
+                self.assertIsNone(self.match.published_at)
+
     def test_recorder_cannot_publish_assignments(self):
         self.match.assignment_status = (
             Match.AssignmentStatus.DRAFT
