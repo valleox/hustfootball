@@ -92,3 +92,17 @@ Vercel 不使用它们。
 Vercel 会把它作为 VERCEL_PROJECT_PRODUCTION_URL，settings.py 自动加入 ALLOWED_HOSTS，
 因此没有修改 DJANGO_ALLOWED_HOSTS / DJANGO_CSRF_TRUSTED_ORIGINS（它们是只写的 Secret）。
 同源 HTTPS 登录不需要 CSRF_TRUSTED_ORIGINS。
+
+## 2026-10-08 登录失败限制（需要迁移）
+
+新增 django-axes，会创建登录记录表。合并到 main 之前，先在可信终端用 Neon direct URL
+（无 -pooler）对数据库执行一次迁移，否则登录页会因缺少数据表而报错：
+
+```text
+python manage.py migrate --noinput
+```
+
+迁移只新增 axes 的数据表，不修改现有业务数据；旧代码可以继续使用迁移后的数据库。
+注意：Preview 与正式环境共用同一个数据库，迁移前 Preview 上的登录同样会报错。
+
+被锁定的账号可以等待 15 分钟自动解锁，或在后台「Axes」→「Access attempts」中删除对应记录。
