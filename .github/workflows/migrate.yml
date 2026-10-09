@@ -1,0 +1,62 @@
+name: Migrate database
+
+# 手动运行：Actions → Migrate database → Run workflow。
+# 「Use workflow from」选择包含新 migration 的分支，target 选择要迁移的数据库。
+# 需要在仓库 Settings → Secrets and variables → Actions 中设置：
+#   PREVIEW_DATABASE_URL     Neon preview 分支的 direct 连接字符串（不带 -pooler）
+#   PRODUCTION_DATABASE_URL  Neon main 分支的 direct 连接字符串（不带 -pooler）
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 要迁移的数据库
+        required: true
+        type: choice
+        options:
+          - preview
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migrate-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    env:
+      DATABASE_URL: ${{ inputs.target == 'production' && secrets.PRODUCTION_DATABASE_URL || secrets.PREVIEW_DATABASE_URL }}
+      DJANGO_SECRET_KEY: migration-only-not-used-for-serving
+
+    steps:
+      - name: Check secret is configured
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::未设置 ${{ inputs.target == 'production' && 'PRODUCTION_DATABASE_URL' || 'PREVIEW_DATABASE_URL' }}"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: web/.python-version
+          cache: pip
+          cache-dependency-path: web/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pending migrations
+        run: python manage.py showmigrations --plan | grep -v '^\[X\]' || echo "没有待执行的迁移"
+
+      - name: Migrate
+        run: python manage.py migrate --noinput
+
+      - name: Ensure roles exist
+        run: python manage.py setup_roles
