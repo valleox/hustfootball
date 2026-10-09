@@ -6,6 +6,23 @@
 <section class="card">
   <h1>欢迎，{{ user.get_username }}</h1>
 
+  {% if unread_notifications %}
+    <div class="notice">
+      <h2>新通知</h2>
+      <ul>
+        {% for notification in unread_notifications %}
+          <li>
+            {{ notification.message }}
+            {% if notification.link %}
+              <a href="{{ notification.link }}">查看</a>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <a href="{% url 'scheduling:notification_list' %}">查看全部通知并标为已读</a>
+    </div>
+  {% endif %}
+
   <h2>当前角色</h2>
   <ul>
     {% if user.is_superuser %}

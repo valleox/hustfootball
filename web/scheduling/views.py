@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Max, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
@@ -29,10 +30,8 @@ from .models import (
     Notification,
     RefereeProfile,
 )
-from .notifications import (
-    notify_assignments_published,
-    notify_leave_request,
-)
+from .notifications import notify_leave_request
+from .publishing import publish_match, publish_matches
 
 
 @never_cache
@@ -42,6 +41,9 @@ def home(request):
         "has_referee_profile": False,
         "pending_assignments": [],
         "upcoming_assignments": [],
+        "unread_notifications": request.user.notifications.filter(
+            read_at__isnull=True
+        )[:5],
     }
 
     try:
@@ -116,7 +118,7 @@ def match_list(request):
         "home_team",
         "away_team",
         "venue",
-    )
+    ).annotate(assigned_count=Count("assignments"))
 
     context = {
         "upcoming_matches": matches.filter(
@@ -593,74 +595,57 @@ def assignment_update(request, pk):
 @require_POST
 def assignment_publish(request, pk):
     match = get_object_or_404(Match, pk=pk)
+    ok, notified, problem = publish_match(request, match)
 
-    if (
-        match.assignment_status
-        == Match.AssignmentStatus.PUBLISHED
-    ):
-        messages.info(request, "本场裁判安排已经发布。")
-        return redirect(
-            "scheduling:match_detail",
-            pk=match.pk,
-        )
-
-    if match.status != Match.Status.SCHEDULED:
-        messages.error(
+    if ok:
+        messages.success(
             request,
-            f"本场比赛{match.get_status_display()}，不能发布裁判安排。",
+            f"裁判安排已经发布，已通知 {notified} 名裁判。",
         )
-        return redirect(
-            "scheduling:match_detail",
-            pk=match.pk,
-        )
+    elif match.assignment_status == Match.AssignmentStatus.PUBLISHED:
+        messages.info(request, problem)
+    else:
+        messages.error(request, problem)
 
-    required_positions = {
-        position
-        for position, _label in Assignment.Position.choices
-    }
-    assigned_positions = set(
-        match.assignments.values_list(
-            "position",
-            flat=True,
-        )
-    )
-    missing_positions = required_positions - assigned_positions
-
-    if missing_positions:
-        position_labels = dict(Assignment.Position.choices)
-        missing_labels = [
-            position_labels[position]
-            for position in sorted(missing_positions)
-        ]
-        messages.error(
-            request,
-            "还不能发布，以下岗位尚未安排："
-            f"{'、'.join(missing_labels)}。",
-        )
-        return redirect(
-            "scheduling:match_detail",
-            pk=match.pk,
-        )
-
-    match.assignment_status = Match.AssignmentStatus.PUBLISHED
-    match.published_at = timezone.now()
-    match.save(
-        update_fields=[
-            "assignment_status",
-            "published_at",
-            "updated_at",
-        ]
-    )
-
-    notified = notify_assignments_published(request, match)
-    messages.success(
-        request,
-        f"裁判安排已经发布，已通知 {notified} 名裁判。",
-    )
     return redirect(
         "scheduling:match_detail",
         pk=match.pk,
     )
+
+
+@login_required
+@permission_required(
+    "scheduling.publish_assignments",
+    raise_exception=True,
+)
+@require_POST
+def assignment_bulk_publish(request):
+    match_ids = [
+        int(value)
+        for value in request.POST.getlist("match_ids")
+        if value.isdigit()
+    ]
+
+    if not match_ids:
+        messages.error(request, "请先勾选要发布的比赛。")
+        return redirect("scheduling:match_list")
+
+    matches = Match.objects.filter(pk__in=match_ids).select_related(
+        "home_team",
+        "away_team",
+    ).order_by("kickoff_at", "id")
+    published, notified, skipped = publish_matches(request, matches)
+
+    if published:
+        messages.success(
+            request,
+            f"已发布 {published} 场比赛的裁判安排，"
+            f"已通知 {notified} 名裁判。",
+        )
+    for reason in skipped:
+        messages.error(request, f"未发布：{reason}")
+
+    return redirect("scheduling:match_list")
 
 
 @login_required
@@ -879,3 +864,10 @@ def notification_list(request):
             "unread_notification_count": 0,
         },
     )
+
+
+def admin_login_redirect(request):
+    """后台登录统一使用网站的登录页，保留 next 参数。"""
+    query = request.GET.copy()
+    query.setdefault("next", reverse("admin:index"))
+    return redirect(f"{reverse('login')}?{query.urlencode()}")

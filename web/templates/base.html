@@ -148,6 +148,29 @@
       border-bottom: 1px solid #dce5e0;
     }
     .notification-list li.unread { font-weight: 600; }
+    .match-row { display: flex; align-items: center; gap: 10px; }
+    .match-row .match-item { flex: 1; min-width: 0; }
+    .publish-checkbox,
+    .checkbox-placeholder {
+      flex: none;
+      width: 22px;
+      height: 22px;
+      min-height: 0;
+    }
+    button.secondary {
+      background: white;
+      color: #146c52;
+      border-color: #146c52;
+    }
+    .status-tag {
+      display: inline-block;
+      padding: 0 8px;
+      border-radius: 10px;
+      background: #fff4e5;
+      color: #8a4b00;
+      font-size: 13px;
+    }
+    .status-tag.published { background: #e6f2eb; color: #145540; }
     .table-scroll { overflow-x: auto; margin-top: 16px; }
     .data-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
     .data-table th,

@@ -13,6 +13,11 @@ urlpatterns = [
         name="assignment_export",
     ),
     path(
+        "matches/publish/",
+        views.assignment_bulk_publish,
+        name="assignment_bulk_publish",
+    ),
+    path(
         "matches/new/",
         views.match_create,
         name="match_create",

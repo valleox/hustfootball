@@ -1,7 +1,8 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.models import Group
 from django.utils import timezone
 
+from .publishing import publish_match, publish_matches
 from .models import (
     Assignment,
     Competition,
@@ -17,6 +18,7 @@ from .models import (
 admin.site.site_header = "足协裁判管理系统"
 admin.site.site_title = "足协管理后台"
 admin.site.index_title = "系统管理"
+admin.site.site_url = "/"
 
 
 def update_response_time(assignment):
@@ -135,17 +137,96 @@ class MatchAdmin(admin.ModelAdmin):
 
         return readonly_fields
 
+    actions = ("publish_selected",)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related(
+            "competition",
+            "home_team",
+            "away_team",
+        )
+
+    def get_search_results(self, request, queryset, search_term):
+        queryset, may_have_duplicates = super().get_search_results(
+            request,
+            queryset,
+            search_term,
+        )
+
+        # 为裁判安排选择比赛时，只列出未结束、未取消的比赛。
+        if (
+            request.GET.get("model_name") == "assignment"
+            and request.GET.get("field_name") == "match"
+        ):
+            queryset = queryset.filter(
+                status=Match.Status.SCHEDULED,
+                kickoff_at__date__gte=timezone.localdate(),
+            ).order_by("kickoff_at", "id")
+
+        return queryset, may_have_duplicates
+
     def save_model(self, request, obj, form, change):
         if obj.created_by_id is None:
             obj.created_by = request.user
 
+        # 新发布的比赛先按草稿保存，等裁判安排（内联表单）保存后
+        # 再在 save_related 中统一检查、发布并通知裁判。
+        request._publish_match_after_save = False
         if obj.assignment_status == Match.AssignmentStatus.PUBLISHED:
-            if obj.published_at is None:
-                obj.published_at = timezone.now()
+            previous = None
+            if change:
+                previous = (
+                    Match.objects.filter(pk=obj.pk)
+                    .values_list("assignment_status", flat=True)
+                    .first()
+                )
+            if previous != Match.AssignmentStatus.PUBLISHED:
+                request._publish_match_after_save = True
+                obj.assignment_status = Match.AssignmentStatus.DRAFT
+                obj.published_at = None
         else:
             obj.published_at = None
 
         super().save_model(request, obj, form, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+
+        if getattr(request, "_publish_match_after_save", False):
+            ok, notified, problem = publish_match(request, form.instance)
+            if ok:
+                self.message_user(
+                    request,
+                    f"裁判安排已经发布，已通知 {notified} 名裁判。",
+                    messages.SUCCESS,
+                )
+            else:
+                self.message_user(
+                    request,
+                    f"已保存为草稿，未发布：{problem}",
+                    messages.WARNING,
+                )
+
+    def has_publish_permission(self, request):
+        return request.user.has_perm("scheduling.publish_assignments")
+
+    @admin.action(
+        description="发布所选比赛的裁判安排",
+        permissions=["publish"],
+    )
+    def publish_selected(self, request, queryset):
+        published, notified, skipped = publish_matches(
+            request,
+            queryset.order_by("kickoff_at", "id"),
+        )
+        if published:
+            self.message_user(
+                request,
+                f"已发布 {published} 场比赛的裁判安排，已通知 {notified} 名裁判。",
+                messages.SUCCESS,
+            )
+        for reason in skipped:
+            self.message_user(request, f"未发布：{reason}", messages.WARNING)
 
     def save_formset(self, request, form, formset, change):
         instances = formset.save(commit=False)

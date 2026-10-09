@@ -5,6 +5,11 @@ from django.urls import include, path
 from scheduling import views as scheduling_views
 
 urlpatterns = [
+    path(
+        "admin/login/",
+        scheduling_views.admin_login_redirect,
+        name="admin_login_redirect",
+    ),
     path("admin/", admin.site.urls),
     path(
         "accounts/login/",
