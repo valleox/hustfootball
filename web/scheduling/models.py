@@ -362,3 +362,32 @@ class InviteCode(TimeStampedModel):
 
     def __str__(self):
         return self.note or self.code
+
+
+class Notification(models.Model):
+    """站内通知；配置了邮件服务时同时发送邮件。"""
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name="接收人",
+    )
+    message = models.TextField("内容")
+    link = models.CharField("链接", max_length=200, blank=True)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+    read_at = models.DateTimeField("阅读时间", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "通知"
+        verbose_name_plural = "通知"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["recipient", "read_at"],
+                name="notification_unread_idx",
+            )
+        ]
+
+    def __str__(self):
+        return self.message[:40]

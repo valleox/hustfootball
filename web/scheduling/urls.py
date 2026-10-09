@@ -38,6 +38,11 @@ urlpatterns = [
         name="assignment_publish",
     ),
     path(
+        "notifications/",
+        views.notification_list,
+        name="notification_list",
+    ),
+    path(
         "referees/workload/",
         views.referee_workload,
         name="referee_workload",

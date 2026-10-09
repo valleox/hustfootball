@@ -68,6 +68,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                "scheduling.context_processors.notifications",
             ],
         },
     },
@@ -259,3 +260,23 @@ SILENCED_SYSTEM_CHECKS = ["axes.W006"]
 AXES_RESET_ON_SUCCESS = True
 AXES_LOCKOUT_TEMPLATE = "registration/locked_out.html"
 AXES_CLIENT_IP_CALLABLE = "scheduling.auth.client_ip"
+
+# 邮件通知（SMTP）。未设置 EMAIL_HOST 时只发站内通知。
+# 例：QQ 邮箱 smtp.qq.com:465，163 邮箱 smtp.163.com:465，密码填邮箱的 SMTP 授权码。
+EMAIL_NOTIFICATIONS_ENABLED = bool(os.environ.get("EMAIL_HOST"))
+
+if EMAIL_NOTIFICATIONS_ENABLED:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = os.environ["EMAIL_HOST"]
+    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "465"))
+    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "1") == "1"
+    EMAIL_USE_TLS = not EMAIL_USE_SSL and (
+        os.environ.get("EMAIL_USE_TLS", "0") == "1"
+    )
+    EMAIL_TIMEOUT = 10
+    DEFAULT_FROM_EMAIL = os.environ.get(
+        "DEFAULT_FROM_EMAIL",
+        EMAIL_HOST_USER,
+    )

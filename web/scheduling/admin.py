@@ -7,6 +7,7 @@ from .models import (
     Competition,
     InviteCode,
     Match,
+    Notification,
     RefereeProfile,
     Team,
     Venue,
@@ -213,3 +214,12 @@ class InviteCodeAdmin(admin.ModelAdmin):
     list_filter = ("is_active",)
     search_fields = ("code", "note")
     readonly_fields = ("used_count", "created_at", "updated_at")
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("recipient", "message", "created_at", "read_at")
+    list_filter = ("read_at",)
+    search_fields = ("recipient__username", "message")
+    list_select_related = ("recipient",)
+    readonly_fields = ("created_at",)

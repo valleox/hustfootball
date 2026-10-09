@@ -132,6 +132,22 @@
       gap: 16px;
       margin-top: 24px;
     }
+    .badge {
+      display: inline-block;
+      min-width: 20px;
+      padding: 0 6px;
+      border-radius: 10px;
+      background: #d92d20;
+      color: white;
+      font-size: 13px;
+      text-align: center;
+    }
+    .notification-list { padding: 0; list-style: none; }
+    .notification-list li {
+      padding: 12px 0;
+      border-bottom: 1px solid #dce5e0;
+    }
+    .notification-list li.unread { font-weight: 600; }
     .table-scroll { overflow-x: auto; margin-top: 16px; }
     .data-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
     .data-table th,
@@ -167,6 +183,11 @@
       </a>
       {% if user.is_authenticated %}
         <div class="header-actions">
+          <a href="{% url 'scheduling:notification_list' %}">
+            通知{% if unread_notification_count %}
+              <span class="badge">{{ unread_notification_count }}</span>
+            {% endif %}
+          </a>
           <a href="{% url 'password_change' %}">修改密码</a>
           <form method="post" action="{% url 'logout' %}">
             {% csrf_token %}

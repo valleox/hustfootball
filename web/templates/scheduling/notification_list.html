@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}通知 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p><a href="{% url 'scheduling:home' %}">返回首页</a></p>
+  <h1>通知</h1>
+
+  <ul class="notification-list">
+    {% for notification in notifications %}
+      <li {% if notification.pk in unread_ids %}class="unread"{% endif %}>
+        {% if notification.pk in unread_ids %}<span class="badge">新</span>{% endif %}
+        {{ notification.message }}
+        <div class="muted">
+          {{ notification.created_at|date:"n月j日 H:i" }}
+          {% if notification.link %}
+            · <a href="{{ notification.link }}">查看</a>
+          {% endif %}
+        </div>
+      </li>
+    {% empty %}
+      <li class="muted">暂时没有通知。</li>
+    {% endfor %}
+  </ul>
+  <p class="muted">只显示最近 50 条。</p>
+</section>
+{% endblock %}

@@ -4,7 +4,10 @@ from io import BytesIO, StringIO
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management import call_command
-from django.test import TestCase
+from unittest import mock
+
+from django.core import mail
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.admin.sites import AdminSite
@@ -15,6 +18,7 @@ from .models import (
     Assignment,
     Competition,
     InviteCode,
+    Notification,
     Match,
     RefereeProfile,
     Team,
@@ -852,6 +856,187 @@ class AssignmentPageTests(TestCase):
         response = self.client.get(reverse("scheduling:home"))
 
         self.assertNotContains(response, "待处理请假")
+
+    def unpublish(self):
+        self.match.assignment_status = Match.AssignmentStatus.DRAFT
+        self.match.published_at = None
+        self.match.save()
+
+    def publish(self):
+        self.client.force_login(self.scheduler)
+        return self.client.post(
+            reverse(
+                "scheduling:assignment_publish",
+                args=[self.match.pk],
+            ),
+            follow=True,
+        )
+
+    def set_referee_emails(self):
+        for index, referee in enumerate(self.referees, start=1):
+            referee.user.email = f"referee{index}@example.test"
+            referee.user.save()
+
+    def test_publishing_notifies_assigned_referees_in_site(self):
+        self.unpublish()
+
+        response = self.publish()
+
+        self.assertContains(response, "已通知 4 名裁判")
+        for referee in self.referees[:4]:
+            notification = Notification.objects.get(
+                recipient=referee.user
+            )
+            self.assertIn("排班测试主队 vs 排班测试客队", notification.message)
+            self.assertEqual(
+                notification.link,
+                reverse(
+                    "scheduling:match_detail",
+                    args=[self.match.pk],
+                ),
+            )
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=self.referees[4].user
+            ).exists()
+        )
+        self.assertIn(
+            "第四官员",
+            Notification.objects.get(
+                recipient=self.referees[3].user
+            ).message,
+        )
+
+    def test_publishing_sends_email_when_enabled(self):
+        self.unpublish()
+        self.set_referee_emails()
+
+        with override_settings(EMAIL_NOTIFICATIONS_ENABLED=True):
+            self.publish()
+
+        self.assertEqual(len(mail.outbox), 4)
+        recipients = sorted(
+            message.to[0] for message in mail.outbox
+        )
+        self.assertEqual(
+            recipients,
+            [f"referee{i}@example.test" for i in range(1, 5)],
+        )
+        self.assertIn("新的裁判安排", mail.outbox[0].subject)
+        self.assertIn(
+            f"http://testserver/matches/{self.match.pk}/",
+            mail.outbox[0].body,
+        )
+
+    def test_no_email_when_disabled(self):
+        self.unpublish()
+        self.set_referee_emails()
+
+        self.publish()
+
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(Notification.objects.count(), 4)
+
+    def test_email_failure_does_not_block_publishing(self):
+        self.unpublish()
+        self.set_referee_emails()
+
+        with override_settings(EMAIL_NOTIFICATIONS_ENABLED=True):
+            with mock.patch(
+                "scheduling.notifications.get_connection",
+                side_effect=OSError("SMTP down"),
+            ):
+                with self.assertLogs(
+                    "scheduling.notifications",
+                    level="ERROR",
+                ):
+                    response = self.publish()
+
+        self.assertContains(response, "裁判安排已经发布")
+        self.match.refresh_from_db()
+        self.assertEqual(
+            self.match.assignment_status,
+            Match.AssignmentStatus.PUBLISHED,
+        )
+        self.assertEqual(Notification.objects.count(), 4)
+
+    def request_leave(self, assignment, note="临时有课"):
+        assignment.referee.user.groups.add(
+            Group.objects.get(name="裁判员")
+        )
+        self.client.force_login(assignment.referee.user)
+        return self.client.post(
+            reverse(
+                "scheduling:assignment_respond",
+                args=[assignment.pk],
+            ),
+            {
+                "response_status": Assignment.ResponseStatus.LEAVE,
+                "response_note": note,
+            },
+            follow=True,
+        )
+
+    def test_leave_request_notifies_schedulers_once(self):
+        assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        self.scheduler.email = "scheduler@example.test"
+        self.scheduler.save()
+
+        with override_settings(EMAIL_NOTIFICATIONS_ENABLED=True):
+            response = self.request_leave(assignment)
+            self.request_leave(assignment, note="补充说明")
+
+        self.assertContains(response, "已通知排班管理员")
+        notifications = Notification.objects.filter(
+            recipient=self.scheduler
+        )
+        self.assertEqual(notifications.count(), 1)
+        self.assertIn("测试裁判1 申请请假", notifications[0].message)
+        self.assertIn("临时有课", notifications[0].message)
+        self.assertFalse(
+            Notification.objects.filter(recipient=self.recorder).exists()
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["scheduler@example.test"])
+
+    def test_notification_page_marks_items_read(self):
+        user = self.referees[0].user
+        Notification.objects.create(recipient=user, message="第一条通知")
+        Notification.objects.create(recipient=user, message="第二条通知")
+        self.client.force_login(user)
+
+        home = self.client.get(reverse("scheduling:home"))
+        self.assertContains(home, '<span class="badge">2</span>', html=True)
+
+        page = self.client.get(reverse("scheduling:notification_list"))
+        self.assertContains(page, "第一条通知")
+        self.assertContains(page, "第二条通知")
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=user,
+                read_at__isnull=True,
+            ).exists()
+        )
+
+        home = self.client.get(reverse("scheduling:home"))
+        self.assertNotContains(home, 'class="badge"')
+
+    def test_users_only_see_their_own_notifications(self):
+        Notification.objects.create(
+            recipient=self.referees[1].user,
+            message="别人的通知",
+        )
+        self.client.force_login(self.referees[0].user)
+
+        page = self.client.get(reverse("scheduling:notification_list"))
+
+        self.assertNotContains(page, "别人的通知")
+        self.assertIsNone(
+            Notification.objects.get(message="别人的通知").read_at
+        )
 
     def test_draft_assignment_is_hidden_on_match_detail(self):
         referee_user = self.referees[0].user

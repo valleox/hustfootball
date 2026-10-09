@@ -22,7 +22,17 @@ from .forms import (
     MatchForm,
     RefereeSignupForm,
 )
-from .models import Assignment, Competition, Match, RefereeProfile
+from .models import (
+    Assignment,
+    Competition,
+    Match,
+    Notification,
+    RefereeProfile,
+)
+from .notifications import (
+    notify_assignments_published,
+    notify_leave_request,
+)
 
 
 @never_cache
@@ -642,7 +652,11 @@ def assignment_publish(request, pk):
         ]
     )
 
-    messages.success(request, "裁判安排已经发布。")
+    notified = notify_assignments_published(request, match)
+    messages.success(
+        request,
+        f"裁判安排已经发布，已通知 {notified} 名裁判。",
+    )
     return redirect(
         "scheduling:match_detail",
         pk=match.pk,
@@ -680,6 +694,7 @@ def assignment_respond(request, pk):
             pk=assignment.match_id,
         )
 
+    previous_status = assignment.response_status
     form = AssignmentResponseForm(
         request.POST if request.method == "POST" else None,
         instance=assignment,
@@ -703,7 +718,12 @@ def assignment_respond(request, pk):
         ):
             messages.success(request, "已经确认参加本场执法。")
         else:
-            messages.success(request, "请假申请已经提交。")
+            if previous_status != Assignment.ResponseStatus.LEAVE:
+                notify_leave_request(request, assignment)
+            messages.success(
+                request,
+                "请假申请已经提交，已通知排班管理员。",
+            )
 
         return redirect(
             "scheduling:match_detail",
@@ -830,5 +850,32 @@ def referee_workload(request):
             "competitions": competitions,
             "selected_competition": selected_competition,
             "referees": referees,
+        },
+    )
+
+
+@never_cache
+@login_required
+def notification_list(request):
+    notifications = list(request.user.notifications.all()[:50])
+    unread_ids = [
+        notification.pk
+        for notification in notifications
+        if notification.read_at is None
+    ]
+
+    if unread_ids:
+        Notification.objects.filter(pk__in=unread_ids).update(
+            read_at=timezone.now()
+        )
+
+    return render(
+        request,
+        "scheduling/notification_list.html",
+        {
+            "notifications": notifications,
+            "unread_ids": set(unread_ids),
+            # 本页打开后全部已读，页首不再显示未读数。
+            "unread_notification_count": 0,
         },
     )
