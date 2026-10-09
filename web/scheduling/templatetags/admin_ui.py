@@ -13,10 +13,15 @@ MODEL_TILES = {
     "scheduling.invitecode": ("🎟️", "发给裁判的自助注册邀请码"),
     "scheduling.notification": ("🔔", "已发送的站内通知记录"),
     "auth.user": ("👤", "登录账号、密码与所属角色"),
-    "auth.group": ("👥", "角色及其权限"),
+    "auth.group": ("👥", "裁判员、场次录入员、排班管理员等角色及各自的权限"),
     "axes.accessattempt": ("🔒", "被锁定或多次失败的账号"),
     "axes.accessfailurelog": ("🧾", "每一次失败登录的明细"),
     "axes.accesslog": ("🗂️", "所有登录与退出记录"),
+}
+
+# 比模型默认名称更清楚的显示名
+TILE_NAMES = {
+    "auth.group": "所有角色",
 }
 
 APP_ORDER = ["scheduling", "auth", "axes"]
@@ -44,3 +49,8 @@ def ordered_apps(app_list):
         return APP_ORDER.index(label) if label in APP_ORDER else len(APP_ORDER)
 
     return sorted(app_list, key=rank)
+
+
+@register.filter
+def tile_name(model, app_label):
+    return TILE_NAMES.get(_key(app_label, model), model["name"])

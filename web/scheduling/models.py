@@ -220,17 +220,17 @@ class Match(TimeStampedModel):
             raise ValidationError("主队和客队不能是同一支球队。")
 
     def __str__(self):
-        # 后台下拉框等处显示，需要能区分同名对阵：赛事 · 轮次 · 场次 · 时间 · 对阵。
+        # 后台下拉框等处显示：先赛事、轮次和对阵，再开球时间与场次编号。
         parts = [str(self.competition)]
         if self.round_name:
             parts.append(self.round_name)
-        if self.match_number:
-            parts.append(f"场次 {self.match_number}")
+        parts.append(f"{self.home_team} vs {self.away_team}")
         if self.kickoff_at:
             parts.append(
                 timezone.localtime(self.kickoff_at).strftime("%m月%d日 %H:%M")
             )
-        parts.append(f"{self.home_team} vs {self.away_team}")
+        if self.match_number:
+            parts.append(f"场次 {self.match_number}")
         return " · ".join(parts)
 
 

@@ -8,7 +8,13 @@
           <div class="tile-head">
             <span class="tile-icon" aria-hidden="true">{{ model|tile_icon:app.app_label }}</span>
             <div>
-              <h3 class="tile-name">{{ model.name }}</h3>
+              <h3 class="tile-name">
+                {% if model.admin_url %}
+                  <a class="tile-stretch" href="{{ model.admin_url }}">{{ model|tile_name:app.app_label }}</a>
+                {% else %}
+                  {{ model|tile_name:app.app_label }}
+                {% endif %}
+              </h3>
               {% with description=model|tile_description:app.app_label %}
                 {% if description %}<p class="tile-desc">{{ description }}</p>{% endif %}
               {% endwith %}
@@ -17,13 +23,13 @@
           <div class="tile-actions">
             {% if model.admin_url %}
               <a class="tile-button primary" href="{{ model.admin_url }}"
-                 aria-label="打开{{ model.name }}">
+                 aria-label="打开{{ model|tile_name:app.app_label }}">
                 {% if model.view_only %}查看{% else %}打开{% endif %}
               </a>
             {% endif %}
             {% if model.add_url %}
               <a class="tile-button" href="{{ model.add_url }}"
-                 aria-label="新增{{ model.name }}">＋ 新增</a>
+                 aria-label="新增{{ model|tile_name:app.app_label }}">＋ 新增</a>
             {% endif %}
           </div>
         </article>

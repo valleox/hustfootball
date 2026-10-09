@@ -265,14 +265,27 @@
     button.secondary:hover,
     .button-link.secondary:hover { background: #fff; }
     .full-width { width: 100%; }
+    /* 并列按钮统一宽度：每一列等宽，窄屏时自动换行 */
     .form-actions {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 200px));
       gap: 12px;
       margin-top: 24px;
     }
-    .form-actions > a:not(.button-link) { padding: 0 6px; }
+    .form-actions > .button-link,
+    .form-actions > button { width: 100%; }
+    .page-grid > .card > .form-actions {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .filter-bar select { width: auto; flex: 1 1 200px; }
+    .filter-bar button { flex: none; min-width: 120px; }
     .form-actions.bulk-actions { margin: 12px 0 18px; }
 
     /* ===== 表单 ===== */
@@ -454,7 +467,6 @@
       overflow: hidden;
       clip: rect(0 0 0 0);
     }
-    form.form-actions select { width: auto; flex: 1 1 200px; }
 
     /* ===== 页脚 ===== */
     .site-footer {

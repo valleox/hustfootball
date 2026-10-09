@@ -1,5 +1,8 @@
 from django.conf import settings
+from django.apps import apps as django_apps
 from django.contrib import admin, messages
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import GroupAdmin, UserAdmin
 from django.db.models import Prefetch
 from django.urls import reverse
 from django.utils.html import format_html
@@ -32,6 +35,42 @@ def update_response_time(assignment, status_changed=False):
         assignment.responded_at = None
     elif status_changed or assignment.responded_at is None:
         assignment.responded_at = timezone.now()
+
+
+WEEKDAYS = "一二三四五六日"
+
+
+def match_overview_html(match, link_url, link_text):
+    """后台列表中的比赛摘要：赛事与轮次 → 对阵 → 日期时间与场地。"""
+    meta = " · ".join(
+        part
+        for part in (
+            str(match.competition),
+            match.round_name,
+            f"场次 {match.match_number}" if match.match_number else "",
+        )
+        if part
+    )
+    kickoff = timezone.localtime(match.kickoff_at)
+    when = (
+        f"{kickoff:%Y年%m月%d日} 周{WEEKDAYS[kickoff.weekday()]} "
+        f"{kickoff:%H:%M}"
+    )
+    return format_html(
+        '<div class="match-cell">'
+        '<span class="match-meta">{}</span>'
+        '<strong class="match-teams">{} vs {}</strong>'
+        '<span class="match-time">{} · {}</span>'
+        '<a class="chip-link row-link" href="{}">{}</a>'
+        "</div>",
+        meta,
+        match.home_team,
+        match.away_team,
+        when,
+        match.venue,
+        link_url,
+        link_text,
+    )
 
 
 @admin.register(Competition)
@@ -89,14 +128,11 @@ class AssignmentInline(admin.TabularInline):
 @admin.register(Match)
 class MatchAdmin(admin.ModelAdmin):
     list_display = (
-        "kickoff_at",
-        "home_team",
-        "away_team",
-        "competition",
-        "venue",
+        "match_overview",
         "status",
         "assignment_status",
     )
+    list_display_links = None
     list_filter = (
         "competition",
         "status",
@@ -145,11 +181,20 @@ class MatchAdmin(admin.ModelAdmin):
     actions = ("publish_selected",)
     actions_on_bottom = True
 
+    @admin.display(description="比赛", ordering="kickoff_at")
+    def match_overview(self, obj):
+        return match_overview_html(
+            obj,
+            reverse("admin:scheduling_match_change", args=[obj.pk]),
+            "编辑比赛",
+        )
+
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
             "competition",
             "home_team",
             "away_team",
+            "venue",
         )
 
     def get_search_results(self, request, queryset, search_term):
@@ -431,21 +476,10 @@ class MatchAssignmentSummaryAdmin(admin.ModelAdmin):
 
     @admin.display(description="比赛", ordering="kickoff_at")
     def match_info(self, obj):
-        kickoff = timezone.localtime(obj.kickoff_at).strftime("%m月%d日 %H:%M")
-        details = " · ".join(
-            part
-            for part in (str(obj.competition), obj.round_name, obj.match_number)
-            if part
-        )
-        return format_html(
-            '<strong>{} {} vs {}</strong><br>'
-            '<span style="color:#667085">{}</span><br>'
-            '<a class="chip-link" href="{}">编辑比赛与裁判</a>',
-            kickoff,
-            obj.home_team,
-            obj.away_team,
-            details,
+        return match_overview_html(
+            obj,
             reverse("admin:scheduling_match_change", args=[obj.pk]),
+            "编辑比赛与裁判",
         )
 
     def changelist_view(self, request, extra_context=None):
@@ -468,3 +502,53 @@ class MatchAssignmentSummaryAdmin(admin.ModelAdmin):
         return request.user.has_perm("scheduling.publish_assignments")
 
     publish_selected = MatchAdmin.publish_selected
+
+
+# ---- 权限名称显示为中文 ----
+# 权限名称在创建时以英文写入数据库（如 "Can add match"），翻译文件无法改变，
+# 因此在角色和用户的编辑页按「应用 | 模型 | 操作」重新生成中文标签。
+PERMISSION_ACTIONS = {
+    "add": "新增",
+    "change": "修改",
+    "delete": "删除",
+    "view": "查看",
+}
+
+
+def permission_label(permission):
+    content_type = permission.content_type
+    model = content_type.model_class()
+    try:
+        app_name = django_apps.get_app_config(content_type.app_label).verbose_name
+    except LookupError:
+        app_name = content_type.app_label
+    model_name = model._meta.verbose_name if model else content_type.model
+    action, _, rest = permission.codename.partition("_")
+    if action in PERMISSION_ACTIONS and model and rest == model._meta.model_name:
+        label = f"{PERMISSION_ACTIONS[action]}{model_name}"
+    else:
+        label = permission.name
+    return f"{app_name} | {model_name} | {label}"
+
+
+class ChinesePermissionsMixin:
+    def formfield_for_manytomany(self, db_field, request=None, **kwargs):
+        field = super().formfield_for_manytomany(db_field, request, **kwargs)
+        if db_field.name in ("permissions", "user_permissions") and field:
+            field.queryset = field.queryset.select_related("content_type")
+            field.label_from_instance = permission_label
+        return field
+
+
+admin.site.unregister(Group)
+admin.site.unregister(get_user_model())
+
+
+@admin.register(Group)
+class RoleAdmin(ChinesePermissionsMixin, GroupAdmin):
+    pass
+
+
+@admin.register(get_user_model())
+class AccountAdmin(ChinesePermissionsMixin, UserAdmin):
+    pass

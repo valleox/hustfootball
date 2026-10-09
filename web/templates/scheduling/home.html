@@ -21,12 +21,14 @@
 </section>
 
 <div class="page-grid">
-  {% if unread_notifications %}
-    <section class="card span-all">
-      <div class="card-title">
-        <h2>新通知</h2>
-        <a href="{% url 'scheduling:notification_list' %}">查看全部通知并标为已读</a>
-      </div>
+  <section class="card span-all">
+    <div class="card-title">
+      <h2>新通知</h2>
+      <a href="{% url 'scheduling:notification_list' %}">
+        {% if unread_notifications %}查看全部通知并标为已读{% else %}查看历史通知{% endif %}
+      </a>
+    </div>
+    {% if unread_notifications %}
       <ul class="item-list">
         {% for notification in unread_notifications %}
           <li>
@@ -37,8 +39,10 @@
           </li>
         {% endfor %}
       </ul>
-    </section>
-  {% endif %}
+    {% else %}
+      <p class="muted">暂无新通知。</p>
+    {% endif %}
+  </section>
 
   {% if has_referee_profile and perms.scheduling.view_match %}
     <section class="card">

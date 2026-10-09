@@ -2393,3 +2393,98 @@ class AdminDashboardLayoutTests(TestCase):
 
         self.assertContains(response, "banner-card")
         self.assertContains(response, "进入管理后台")
+
+
+class FeedbackRoundThreeTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("setup_roles", stdout=StringIO())
+        cls.admin_user = get_user_model().objects.create_superuser(
+            "round3_admin",
+            "round3@example.test",
+            "x-password-123",
+        )
+        competition = Competition.objects.create(name="院系杯", season="2026秋季")
+        cls.match = Match.objects.create(
+            competition=competition,
+            round_name="小组赛第3轮",
+            match_number="A03",
+            kickoff_at=timezone.now() + timedelta(days=2),
+            home_team=Team.objects.create(name="管理学院"),
+            away_team=Team.objects.create(name="经济学院"),
+            venue=Venue.objects.create(name="东区足球场"),
+        )
+
+    def setUp(self):
+        self.client.force_login(self.admin_user)
+
+    def test_home_always_shows_notification_card(self):
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertContains(response, "新通知")
+        self.assertContains(response, "暂无新通知。")
+
+    def test_side_by_side_buttons_share_grid_columns(self):
+        response = self.client.get(reverse("scheduling:home"))
+        html = response.content.decode()
+        actions = html[html.index("<h2>比赛管理</h2>"):]
+        actions = actions[:actions.index("</section>")]
+
+        self.assertIn('class="form-actions"', actions)
+        self.assertEqual(actions.count('class="button-link'), 3)
+        self.assertContains(response, ".form-actions > .button-link")
+
+    def test_cancel_is_a_button(self):
+        response = self.client.get(reverse("scheduling:match_create"))
+
+        self.assertContains(response, 'class="button-link secondary"')
+
+    def test_admin_match_list_puts_competition_and_teams_first(self):
+        response = self.client.get(reverse("admin:scheduling_match_changelist"))
+        page = response.content.decode()
+        html = page[page.index('class="match-cell"'):]
+        html = html[:html.index("</div>")]
+
+        meta = html.index("院系杯（2026秋季） · 小组赛第3轮 · 场次 A03")
+        teams = html.index("管理学院 vs 经济学院")
+        kickoff = timezone.localtime(self.match.kickoff_at)
+        when = html.index(f"{kickoff:%Y年%m月%d日}")
+        self.assertLess(meta, teams)
+        self.assertLess(teams, when)
+        self.assertContains(response, "编辑比赛")
+
+    def test_match_label_lists_teams_before_time(self):
+        label = str(self.match)
+
+        self.assertLess(label.index("管理学院 vs 经济学院"), label.index("月"))
+        self.assertTrue(label.startswith("院系杯（2026秋季） · 小组赛第3轮"))
+
+    def test_nav_sidebar_rows_are_full_buttons_without_add_links(self):
+        response = self.client.get(reverse("admin:scheduling_match_changelist"))
+        html = response.content.decode()
+        sidebar = html[html.index('id="nav-sidebar"'):html.index("</nav>", html.index('id="nav-sidebar"'))]
+
+        self.assertIn('class="nav-row"', sidebar)
+        self.assertNotIn("addlink", sidebar)
+        self.assertNotIn("增加", sidebar)
+        self.assertIn('id="nav-filter"', sidebar)
+
+    def test_rows_are_clickable(self):
+        response = self.client.get(reverse("admin:scheduling_match_changelist"))
+
+        self.assertContains(response, "clickable-row")
+        self.assertContains(response, 'class="chip-link row-link"')
+
+    def test_groups_are_named_roles(self):
+        index = self.client.get(reverse("admin:index"))
+        self.assertContains(index, "所有角色")
+        self.assertContains(index, "账号与角色")
+        self.assertNotContains(index, ">组<")
+
+        group = Group.objects.get(name="排班管理员")
+        change = self.client.get(
+            reverse("admin:auth_group_change", args=[group.pk])
+        )
+        self.assertContains(change, "裁判排班 | 比赛 | 新增比赛")
+        self.assertContains(change, "可以发布裁判安排")
+        self.assertNotContains(change, "Can add match")

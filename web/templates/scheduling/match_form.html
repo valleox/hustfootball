@@ -41,11 +41,11 @@
       <button type="submit">{{ submit_label }}</button>
 
       {% if match %}
-        <a href="{% url 'scheduling:match_detail' match.pk %}">
+        <a class="button-link secondary" href="{% url 'scheduling:match_detail' match.pk %}">
           取消
         </a>
       {% else %}
-        <a href="{% url 'scheduling:match_list' %}">
+        <a class="button-link secondary" href="{% url 'scheduling:match_list' %}">
           取消
         </a>
       {% endif %}
