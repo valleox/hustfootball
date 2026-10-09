@@ -164,8 +164,20 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 20px;
-      align-items: start;
+      align-items: stretch;
     }
+    /* 同一行的卡片等高，按钮统一沉到卡片底部 */
+    .page-grid > .card { display: flex; flex-direction: column; }
+    .page-grid > .card > .form-actions:last-child { margin-top: auto; padding-top: 24px; }
+    .banner-card {
+      flex-direction: row !important;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px 24px;
+      flex-wrap: wrap;
+    }
+    .banner-card h2 { margin: 0 0 4px; }
+    .banner-card p { margin: 0; }
     .page-grid .span-all { grid-column: 1 / -1; }
     .hero { margin: 8px 4px 28px; }
     .hero h1 { font-size: 40px; letter-spacing: -0.015em; }

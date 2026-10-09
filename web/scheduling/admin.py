@@ -358,7 +358,7 @@ def position_column(position, label):
             return format_html('<span style="color:#98a2b3">{}</span>', "未安排")
 
         return format_html(
-            '<a href="{}">{}</a><br>'
+            '<a class="chip-link" href="{}">{}</a><br>'
             '<span style="color:{}">{}</span>',
             reverse(
                 "admin:scheduling_assignment_change",
@@ -438,13 +438,14 @@ class MatchAssignmentSummaryAdmin(admin.ModelAdmin):
             if part
         )
         return format_html(
-            '<a href="{}"><strong>{} {} vs {}</strong></a><br>'
-            '<span style="color:#667085">{}</span>',
-            reverse("admin:scheduling_match_change", args=[obj.pk]),
+            '<strong>{} {} vs {}</strong><br>'
+            '<span style="color:#667085">{}</span><br>'
+            '<a class="chip-link" href="{}">编辑比赛与裁判</a>',
             kickoff,
             obj.home_team,
             obj.away_team,
             details,
+            reverse("admin:scheduling_match_change", args=[obj.pk]),
         )
 
     def changelist_view(self, request, extra_context=None):

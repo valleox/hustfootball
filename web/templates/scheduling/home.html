@@ -159,13 +159,16 @@
         {% endif %}
       </div>
 
-      {% if user.is_staff %}
-        <p class="muted" style="margin-top: 20px;">
-          <a href="{% url 'admin:index' %}">
-            进入管理后台
-          </a>
-        </p>
-      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if user.is_staff %}
+    <section class="card span-all banner-card">
+      <div>
+        <h2>管理后台</h2>
+        <p class="muted">维护赛事、球队、场地、裁判资料、用户账号和邀请码。</p>
+      </div>
+      <a class="button-link" href="{% url 'admin:index' %}">进入管理后台</a>
     </section>
   {% endif %}
 </div>

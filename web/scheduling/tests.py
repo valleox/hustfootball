@@ -2349,3 +2349,47 @@ class AssignmentSummaryAdminTests(TestCase):
 
         assignment.refresh_from_db()
         self.assertGreater(assignment.responded_at, old_time)
+
+
+class AdminDashboardLayoutTests(TestCase):
+    def setUp(self):
+        call_command("setup_roles", stdout=StringIO())
+        self.admin_user = get_user_model().objects.create_superuser(
+            "layout_admin",
+            "layout@example.test",
+            "x-password-123",
+        )
+        self.client.force_login(self.admin_user)
+
+    def test_admin_index_shows_tiles_with_buttons(self):
+        response = self.client.get(reverse("admin:index"))
+
+        self.assertContains(response, 'class="tile"')
+        self.assertContains(response, "录入比赛、批量发布裁判安排")
+        self.assertContains(
+            response,
+            f'href="{reverse("admin:scheduling_match_changelist")}"',
+        )
+        self.assertContains(
+            response,
+            f'href="{reverse("admin:scheduling_match_add")}"',
+        )
+        self.assertContains(response, "＋ 新增")
+        html = response.content.decode()
+        self.assertLess(html.index("裁判排班"), html.index("登录安全"))
+
+    def test_admin_header_has_standalone_back_to_site_button(self):
+        response = self.client.get(reverse("admin:index"))
+
+        self.assertContains(
+            response,
+            '<a class="pill-button primary" href="/">← 返回前台</a>',
+            html=True,
+        )
+        self.assertContains(response, "退出登录")
+
+    def test_home_shows_admin_as_separate_card(self):
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertContains(response, "banner-card")
+        self.assertContains(response, "进入管理后台")
