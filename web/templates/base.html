@@ -132,6 +132,23 @@
       gap: 16px;
       margin-top: 24px;
     }
+    .table-scroll { overflow-x: auto; margin-top: 16px; }
+    .data-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+    .data-table th,
+    .data-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #dce5e0;
+      text-align: left;
+    }
+    .data-table th { color: #59675f; font-size: 14px; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+    form.form-actions select { width: auto; flex: 1 1 200px; }
     @media (max-width: 600px) {
       .card { padding: 18px; }
       .detail-list {

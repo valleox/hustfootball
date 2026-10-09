@@ -1486,3 +1486,144 @@ class RefereeSignupTests(TestCase):
         for code in codes:
             self.assertEqual(len(code), 10)
             self.assertFalse(set(code) & set("01OIL"))
+
+
+class RefereeWorkloadTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("setup_roles", stdout=StringIO())
+        user_model = get_user_model()
+
+        cls.scheduler = user_model.objects.create_user(
+            username="workload_scheduler",
+            password="x-password-123",
+        )
+        cls.scheduler.groups.add(Group.objects.get(name="排班管理员"))
+        cls.recorder = user_model.objects.create_user(
+            username="workload_recorder",
+            password="x-password-123",
+        )
+        cls.recorder.groups.add(Group.objects.get(name="场次录入员"))
+
+        cls.league = Competition.objects.create(name="联赛", season="2026")
+        cls.cup = Competition.objects.create(name="杯赛", season="2026")
+        cls.venue = Venue.objects.create(name="工作量场地")
+
+        def make_match(competition, days, status=Match.Status.SCHEDULED):
+            index = Match.objects.count()
+            return Match.objects.create(
+                competition=competition,
+                kickoff_at=timezone.now() + timedelta(days=days),
+                home_team=Team.objects.create(name=f"主{index}"),
+                away_team=Team.objects.create(name=f"客{index}"),
+                venue=cls.venue,
+                status=status,
+            )
+
+        cls.busy = RefereeProfile.objects.create(
+            user=user_model.objects.create_user(username="busy"),
+            name="忙碌裁判",
+        )
+        cls.idle = RefereeProfile.objects.create(
+            user=user_model.objects.create_user(username="idle"),
+            name="空闲裁判",
+        )
+
+        cls.past_league = make_match(cls.league, -7)
+        cls.next_league = make_match(cls.league, 3)
+        cls.cup_match = make_match(cls.cup, 5)
+        cls.cancelled = make_match(
+            cls.league,
+            10,
+            status=Match.Status.CANCELLED,
+        )
+
+        Assignment.objects.create(
+            match=cls.past_league,
+            referee=cls.busy,
+            position=Assignment.Position.REFEREE,
+            response_status=Assignment.ResponseStatus.CONFIRMED,
+        )
+        Assignment.objects.create(
+            match=cls.next_league,
+            referee=cls.busy,
+            position=Assignment.Position.ASSISTANT_1,
+            response_status=Assignment.ResponseStatus.LEAVE,
+        )
+        Assignment.objects.create(
+            match=cls.cup_match,
+            referee=cls.busy,
+            position=Assignment.Position.FOURTH_OFFICIAL,
+        )
+        Assignment.objects.create(
+            match=cls.cancelled,
+            referee=cls.busy,
+            position=Assignment.Position.REFEREE,
+        )
+
+    def get_rows(self, **params):
+        self.client.force_login(self.scheduler)
+        response = self.client.get(
+            reverse("scheduling:referee_workload"),
+            params,
+        )
+        self.assertEqual(response.status_code, 200)
+        return {
+            referee.name: referee
+            for referee in response.context["referees"]
+        }
+
+    def test_counts_exclude_cancelled_matches(self):
+        busy = self.get_rows()["忙碌裁判"]
+
+        self.assertEqual(busy.total, 3)
+        self.assertEqual(busy.as_referee, 1)
+        self.assertEqual(busy.as_assistant, 1)
+        self.assertEqual(busy.as_fourth, 1)
+        self.assertEqual(busy.confirmed, 1)
+        self.assertEqual(busy.on_leave, 1)
+        self.assertEqual(busy.upcoming, 2)
+        self.assertEqual(
+            busy.last_match_at,
+            self.past_league.kickoff_at,
+        )
+
+    def test_filter_by_competition(self):
+        rows = self.get_rows(competition=self.cup.pk)
+
+        self.assertEqual(rows["忙碌裁判"].total, 1)
+        self.assertEqual(rows["空闲裁判"].total, 0)
+
+    def test_busiest_referee_is_listed_first(self):
+        names = list(self.get_rows())
+
+        self.assertEqual(names[0], "忙碌裁判")
+
+    def test_recorder_cannot_view_workload(self):
+        self.client.force_login(self.recorder)
+
+        response = self.client.get(
+            reverse("scheduling:referee_workload")
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_assignment_form_shows_competition_counts(self):
+        self.client.force_login(self.scheduler)
+        new_match = Match.objects.create(
+            competition=self.league,
+            kickoff_at=timezone.now() + timedelta(days=20),
+            home_team=Team.objects.create(name="新主队"),
+            away_team=Team.objects.create(name="新客队"),
+            venue=self.venue,
+        )
+
+        response = self.client.get(
+            reverse(
+                "scheduling:assignment_update",
+                args=[new_match.pk],
+            )
+        )
+
+        self.assertContains(response, "忙碌裁判（本赛事已排 2 场）")
+        self.assertContains(response, "空闲裁判（本赛事已排 0 场）")

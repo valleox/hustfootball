@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Count, Max, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
@@ -21,7 +22,7 @@ from .forms import (
     MatchForm,
     RefereeSignupForm,
 )
-from .models import Assignment, Match, RefereeProfile
+from .models import Assignment, Competition, Match, RefereeProfile
 
 
 @never_cache
@@ -745,4 +746,89 @@ def signup(request):
         request,
         "registration/signup.html",
         {"form": form},
+    )
+
+
+@login_required
+@permission_required(
+    "scheduling.view_refereeprofile",
+    raise_exception=True,
+)
+def referee_workload(request):
+    competitions = Competition.objects.all()
+    selected_competition = None
+    competition_id = request.GET.get("competition", "")
+
+    if competition_id.isdigit():
+        selected_competition = competitions.filter(
+            pk=competition_id
+        ).first()
+
+    # 草稿也计入，排班时需要考虑尚未发布的安排；已取消的比赛不计。
+    counted = ~Q(assignments__match__status=Match.Status.CANCELLED)
+    if selected_competition is not None:
+        counted &= Q(
+            assignments__match__competition=selected_competition
+        )
+
+    now = timezone.now()
+
+    def count(extra=None):
+        condition = counted if extra is None else counted & extra
+        return Count("assignments", filter=condition)
+
+    referees = (
+        RefereeProfile.objects.annotate(
+            total=count(),
+            as_referee=count(
+                Q(assignments__position=Assignment.Position.REFEREE)
+            ),
+            as_assistant=count(
+                Q(
+                    assignments__position__in=[
+                        Assignment.Position.ASSISTANT_1,
+                        Assignment.Position.ASSISTANT_2,
+                    ]
+                )
+            ),
+            as_fourth=count(
+                Q(
+                    assignments__position=(
+                        Assignment.Position.FOURTH_OFFICIAL
+                    )
+                )
+            ),
+            confirmed=count(
+                Q(
+                    assignments__response_status=(
+                        Assignment.ResponseStatus.CONFIRMED
+                    )
+                )
+            ),
+            on_leave=count(
+                Q(
+                    assignments__response_status=(
+                        Assignment.ResponseStatus.LEAVE
+                    )
+                )
+            ),
+            upcoming=count(Q(assignments__match__kickoff_at__gte=now)),
+            last_match_at=Max(
+                "assignments__match__kickoff_at",
+                filter=counted
+                & Q(assignments__match__kickoff_at__lt=now),
+            ),
+        )
+        .filter(Q(is_active=True) | Q(total__gt=0))
+        .order_by("-total", "name")
+    )
+
+    return render(
+        request,
+        "scheduling/referee_workload.html",
+        {
+            "competitions": competitions,
+            "selected_competition": selected_competition,
+            "referees": referees,
+        },
     )

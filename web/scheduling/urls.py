@@ -38,6 +38,11 @@ urlpatterns = [
         name="assignment_publish",
     ),
     path(
+        "referees/workload/",
+        views.referee_workload,
+        name="referee_workload",
+    ),
+    path(
         "assignments/<int:pk>/respond/",
         views.assignment_respond,
         name="assignment_respond",

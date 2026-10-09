@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import Group
 from django.db import transaction
-from django.db.models import F
+from django.db.models import Count, F
 from django.db.models import Q
 from django.utils import timezone
 
@@ -144,12 +144,34 @@ class AssignmentForm(forms.Form):
             for assignment in assignments.values()
         ]
 
+        # 显示每名裁判在本赛事其他比赛中的场次，方便平均分配。
         referee_queryset = RefereeProfile.objects.filter(
             Q(is_active=True) | Q(pk__in=current_referee_ids)
+        ).annotate(
+            competition_total=Count(
+                "assignments",
+                filter=Q(
+                    assignments__match__competition_id=(
+                        match.competition_id
+                    )
+                )
+                & ~Q(assignments__match=match)
+                & ~Q(
+                    assignments__match__status=(
+                        Match.Status.CANCELLED
+                    )
+                ),
+            )
         ).order_by("name")
 
         for field_name, position in self.position_fields:
             self.fields[field_name].queryset = referee_queryset
+            self.fields[field_name].label_from_instance = (
+                lambda referee: (
+                    f"{referee.name}"
+                    f"（本赛事已排 {referee.competition_total} 场）"
+                )
+            )
 
             assignment = assignments.get(position)
             if assignment:
