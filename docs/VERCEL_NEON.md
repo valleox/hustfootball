@@ -106,3 +106,44 @@ python manage.py migrate --noinput
 注意：Preview 与正式环境共用同一个数据库，迁移前 Preview 上的登录同样会报错。
 
 被锁定的账号可以等待 15 分钟自动解锁，或在后台「Axes」→「Access attempts」中删除对应记录。
+
+## Preview 使用独立数据库（Neon 分支）
+
+Preview 部署连接 Neon 的 `preview` 分支，在 Preview 上的测试不会改动正式数据。
+
+一次性设置：
+
+1. Neon 控制台 → 项目 → **Branches** → **Create branch**：名称 `preview`，父分支 `main`。
+   选「Current data」会复制当前数据（便于测试）；选「Schema only」只复制表结构。
+2. 在 `preview` 分支页面点 **Connect**，打开 **Connection pooling**，复制连接字符串（带 `-pooler`）。
+3. Vercel → **Settings** → **Environment Variables** → 编辑 **Preview** 的 `DATABASE_URL`，
+   粘贴上一步的连接字符串并保存。Production 的 `DATABASE_URL` 保持不变。
+4. 之后新推送的分支会自动使用 `preview` 数据库；已有的 Preview 部署需要 Redeploy 才会切换。
+
+包含新 migration 的改动按以下顺序上线：
+
+1. 用 `preview` 分支的 direct URL（不带 `-pooler`）运行 `python manage.py migrate --noinput`。
+2. 推送分支，在 Preview 上测试。
+3. 用 `main` 分支的 direct URL 运行同样的迁移。
+4. 合并 PR，正式环境自动部署。
+
+需要用最新的正式数据重新测试时，可在 Neon 的 `preview` 分支页面选择 **Reset from parent**。
+
+## 邮件通知
+
+在 Vercel 的 Production（需要时也包括 Preview）设置以下环境变量后重新部署，即可发送邮件通知；
+不设置 `EMAIL_HOST` 时只有站内通知。
+
+| 变量 | 示例 | 说明 |
+| --- | --- | --- |
+| EMAIL_HOST | smtp.qq.com | 163 邮箱为 smtp.163.com，Gmail 为 smtp.gmail.com |
+| EMAIL_PORT | 465 | |
+| EMAIL_USE_SSL | 1 | 465 端口用 SSL |
+| EMAIL_HOST_USER | 你的完整邮箱地址 | |
+| EMAIL_HOST_PASSWORD | SMTP 授权码 | 在邮箱设置里开启 SMTP 后生成，不是登录密码 |
+| DEFAULT_FROM_EMAIL | 你的完整邮箱地址 | QQ/163 要求与 EMAIL_HOST_USER 相同 |
+
+## 2026-10-09 邀请码注册、工作量统计、通知（需要迁移）
+
+新增 migration `0002_invitecode`、`0003_notification`，按上面的顺序先迁移 `preview`，再迁移 `main`。
+邀请码在后台「邀请码」中创建（只有超级管理员能进入后台），把生成的码发给裁判即可。
