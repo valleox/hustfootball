@@ -1,6 +1,9 @@
+import secrets
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 
 class TimeStampedModel(models.Model):
@@ -296,3 +299,66 @@ class Assignment(TimeStampedModel):
             f"{self.get_position_display()} - "
             f"{self.referee}"
         )
+
+
+# 去掉容易混淆的 0/O、1/I/L，方便口头或截图传播。
+INVITE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def generate_invite_code():
+    return "".join(
+        secrets.choice(INVITE_CODE_ALPHABET) for _ in range(10)
+    )
+
+
+class InviteCode(TimeStampedModel):
+    """裁判自助注册使用的邀请码。"""
+
+    code = models.CharField(
+        "邀请码",
+        max_length=40,
+        unique=True,
+        default=generate_invite_code,
+        help_text="注册时不区分大小写。建议使用自动生成的随机码。",
+    )
+    note = models.CharField(
+        "备注",
+        max_length=100,
+        blank=True,
+        help_text="例如：2026 秋季裁判群",
+    )
+    is_active = models.BooleanField("是否启用", default=True)
+    expires_at = models.DateTimeField(
+        "过期时间",
+        null=True,
+        blank=True,
+        help_text="留空表示不过期。",
+    )
+    max_uses = models.PositiveIntegerField(
+        "最多使用次数",
+        null=True,
+        blank=True,
+        help_text="留空表示不限次数。",
+    )
+    used_count = models.PositiveIntegerField("已使用次数", default=0)
+
+    class Meta:
+        verbose_name = "邀请码"
+        verbose_name_plural = "邀请码"
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        self.code = self.code.strip().upper()
+        super().save(*args, **kwargs)
+
+    def is_usable(self):
+        if not self.is_active:
+            return False
+        if self.expires_at and self.expires_at <= timezone.now():
+            return False
+        if self.max_uses is not None and self.used_count >= self.max_uses:
+            return False
+        return True
+
+    def __str__(self):
+        return self.note or self.code

@@ -27,5 +27,9 @@
     <input type="hidden" name="next" value="{{ next }}">
     <button class="full-width" type="submit">登录</button>
   </form>
+
+  <p class="muted">
+    还没有账号？<a href="{% url 'signup' %}">使用邀请码注册</a>
+  </p>
 </section>
 {% endblock %}

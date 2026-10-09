@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}裁判注册 · 足协裁判管理系统{% endblock %}
+
+{% block content %}
+<section class="card login-card">
+  <h1>裁判注册</h1>
+  <p class="muted">需要排班管理员提供的邀请码。注册后即可查看和确认自己的裁判安排。</p>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    {% for field in form %}
+      <div class="form-field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {{ field.errors }}
+        {% if field.help_text %}
+          <div class="help-text">{{ field.help_text|safe }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    <button class="full-width" type="submit">注册</button>
+  </form>
+
+  <p class="muted">
+    已有账号？<a href="{% url 'login' %}">返回登录</a>
+  </p>
+</section>
+{% endblock %}

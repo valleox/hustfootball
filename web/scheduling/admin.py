@@ -5,6 +5,7 @@ from django.utils import timezone
 from .models import (
     Assignment,
     Competition,
+    InviteCode,
     Match,
     RefereeProfile,
     Team,
@@ -196,3 +197,19 @@ class AssignmentAdmin(admin.ModelAdmin):
 
         update_response_time(obj)
         super().save_model(request, obj, form, change)
+
+
+@admin.register(InviteCode)
+class InviteCodeAdmin(admin.ModelAdmin):
+    list_display = (
+        "code",
+        "note",
+        "is_active",
+        "used_count",
+        "max_uses",
+        "expires_at",
+        "created_at",
+    )
+    list_filter = ("is_active",)
+    search_fields = ("code", "note")
+    readonly_fields = ("used_count", "created_at", "updated_at")

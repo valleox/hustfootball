@@ -1,7 +1,9 @@
 from io import BytesIO
 from urllib.parse import quote
 
+from django import forms as django_forms
 from django.contrib import messages
+from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
@@ -17,6 +19,7 @@ from .forms import (
     AssignmentForm,
     AssignmentResponseForm,
     MatchForm,
+    RefereeSignupForm,
 )
 from .models import Assignment, Match, RefereeProfile
 
@@ -713,4 +716,33 @@ def assignment_respond(request, pk):
             "assignment": assignment,
             "form": form,
         },
+    )
+
+
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect("scheduling:home")
+
+    form = RefereeSignupForm(
+        request.POST if request.method == "POST" else None
+    )
+
+    if request.method == "POST" and form.is_valid():
+        try:
+            user = form.save()
+        except django_forms.ValidationError as error:
+            form.add_error("invite_code", error)
+        else:
+            login(
+                request,
+                user,
+                backend="django.contrib.auth.backends.ModelBackend",
+            )
+            messages.success(request, "注册成功，欢迎加入！")
+            return redirect("scheduling:home")
+
+    return render(
+        request,
+        "registration/signup.html",
+        {"form": form},
     )

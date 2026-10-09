@@ -1,13 +1,18 @@
 from datetime import timedelta
 
 from django import forms
+from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import Group
 from django.db import transaction
+from django.db.models import F
 from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
     Assignment,
     Competition,
+    InviteCode,
     Match,
     RefereeProfile,
     Team,
@@ -366,3 +371,91 @@ class AssignmentResponseForm(forms.ModelForm):
 
         cleaned_data["response_note"] = response_note
         return cleaned_data
+
+
+class RefereeSignupForm(UserCreationForm):
+    """凭邀请码自助注册裁判账号。"""
+
+    name = forms.CharField(label="姓名", max_length=50)
+    email = forms.EmailField(
+        label="电子邮箱",
+        help_text="用于接收排班通知。",
+    )
+    phone = forms.CharField(
+        label="联系电话",
+        max_length=30,
+        required=False,
+    )
+    level = forms.ChoiceField(
+        label="裁判等级",
+        choices=RefereeProfile.Level.choices,
+        initial=RefereeProfile.Level.OTHER,
+    )
+    invite_code = forms.CharField(
+        label="邀请码",
+        max_length=40,
+        help_text="请向排班管理员索取。",
+    )
+
+    class Meta(UserCreationForm.Meta):
+        model = get_user_model()
+        fields = ("username",)
+
+    field_order = (
+        "invite_code",
+        "username",
+        "name",
+        "email",
+        "phone",
+        "level",
+        "password1",
+        "password2",
+    )
+
+    def clean_invite_code(self):
+        code = self.cleaned_data["invite_code"].strip().upper()
+        invite = InviteCode.objects.filter(code=code).first()
+
+        if invite is None or not invite.is_usable():
+            raise forms.ValidationError("邀请码无效或已过期。")
+
+        self.invite = invite
+        return code
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip()
+        user_model = get_user_model()
+
+        if user_model.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("该邮箱已经注册过。")
+
+        return email
+
+    @transaction.atomic
+    def save(self):
+        # 锁定邀请码行，防止并发注册超出使用次数。
+        invite = InviteCode.objects.select_for_update().get(
+            pk=self.invite.pk
+        )
+        if not invite.is_usable():
+            raise forms.ValidationError("邀请码无效或已过期。")
+
+        user = super().save(commit=False)
+        user.email = self.cleaned_data["email"]
+        user.save()
+
+        RefereeProfile.objects.create(
+            user=user,
+            name=self.cleaned_data["name"],
+            phone=self.cleaned_data["phone"],
+            level=self.cleaned_data["level"],
+        )
+
+        referee_group = Group.objects.filter(name="裁判员").first()
+        if referee_group is not None:
+            user.groups.add(referee_group)
+
+        InviteCode.objects.filter(pk=invite.pk).update(
+            used_count=F("used_count") + 1
+        )
+        return user

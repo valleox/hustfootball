@@ -14,6 +14,7 @@ from .admin import RefereeProfileAdmin
 from .models import (
     Assignment,
     Competition,
+    InviteCode,
     Match,
     RefereeProfile,
     Team,
@@ -1354,3 +1355,134 @@ class PasswordChangeTests(TestCase):
             response,
             "scheduling/password_change_form.html",
         )
+
+
+class RefereeSignupTests(TestCase):
+    def setUp(self):
+        call_command("setup_roles", stdout=StringIO())
+        self.invite = InviteCode.objects.create(
+            code="TESTCODE23",
+            max_uses=2,
+        )
+
+    def signup_data(self, **changes):
+        data = {
+            "invite_code": "testcode23",
+            "username": "new_referee",
+            "name": "新裁判",
+            "email": "new.referee@example.test",
+            "phone": "13800000000",
+            "level": RefereeProfile.Level.LEVEL_2,
+            "password1": "Whistle-Blower-2026",
+            "password2": "Whistle-Blower-2026",
+        }
+        data.update(changes)
+        return data
+
+    def test_login_page_links_to_signup(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, reverse("signup"))
+
+    def test_valid_invite_creates_referee_and_logs_in(self):
+        response = self.client.post(
+            reverse("signup"),
+            self.signup_data(),
+        )
+
+        self.assertRedirects(response, reverse("scheduling:home"))
+        user = get_user_model().objects.get(username="new_referee")
+        self.assertEqual(user.email, "new.referee@example.test")
+        self.assertEqual(user.referee_profile.name, "新裁判")
+        self.assertEqual(
+            user.referee_profile.level,
+            RefereeProfile.Level.LEVEL_2,
+        )
+        self.assertTrue(user.groups.filter(name="裁判员").exists())
+        self.assertFalse(user.is_staff)
+        self.assertEqual(
+            int(self.client.session["_auth_user_id"]),
+            user.pk,
+        )
+        self.invite.refresh_from_db()
+        self.assertEqual(self.invite.used_count, 1)
+
+    def test_invalid_invite_is_rejected(self):
+        response = self.client.post(
+            reverse("signup"),
+            self.signup_data(invite_code="WRONGCODE9"),
+        )
+
+        self.assertContains(response, "邀请码无效或已过期。")
+        self.assertFalse(
+            get_user_model().objects.filter(
+                username="new_referee"
+            ).exists()
+        )
+
+    def test_inactive_expired_or_used_up_invite_is_rejected(self):
+        cases = {
+            "inactive": {"is_active": False},
+            "expired": {
+                "expires_at": timezone.now() - timedelta(minutes=1)
+            },
+            "used_up": {"used_count": 2},
+        }
+
+        for name, changes in cases.items():
+            with self.subTest(name):
+                values = {
+                    "is_active": True,
+                    "expires_at": None,
+                    "used_count": 0,
+                }
+                values.update(changes)
+                InviteCode.objects.filter(pk=self.invite.pk).update(
+                    **values
+                )
+
+                response = self.client.post(
+                    reverse("signup"),
+                    self.signup_data(),
+                )
+
+                self.assertContains(response, "邀请码无效或已过期。")
+
+        self.assertFalse(
+            get_user_model().objects.filter(
+                username="new_referee"
+            ).exists()
+        )
+
+    def test_duplicate_email_is_rejected(self):
+        get_user_model().objects.create_user(
+            username="existing",
+            email="New.Referee@example.test",
+            password="x-password-123",
+        )
+
+        response = self.client.post(
+            reverse("signup"),
+            self.signup_data(),
+        )
+
+        self.assertContains(response, "该邮箱已经注册过。")
+
+    def test_logged_in_user_is_redirected_home(self):
+        user = get_user_model().objects.create_user(
+            username="already_in",
+            password="x-password-123",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("signup"))
+
+        self.assertRedirects(response, reverse("scheduling:home"))
+
+    def test_generated_codes_are_unique_and_readable(self):
+        codes = {InviteCode.objects.create().code for _ in range(20)}
+
+        self.assertEqual(len(codes), 20)
+        for code in codes:
+            self.assertEqual(len(code), 10)
+            self.assertFalse(set(code) & set("01OIL"))
