@@ -21,28 +21,6 @@
 </section>
 
 <div class="page-grid">
-  <section class="card span-all">
-    <div class="card-title">
-      <h2>新通知</h2>
-      <a href="{% url 'scheduling:notification_list' %}">
-        {% if unread_notifications %}查看全部通知并标为已读{% else %}查看历史通知{% endif %}
-      </a>
-    </div>
-    {% if unread_notifications %}
-      <ul class="item-list">
-        {% for notification in unread_notifications %}
-          <li>
-            <span>{{ notification.message }}</span>
-            {% if notification.link %}
-              <span class="item-links"><a href="{{ notification.link }}">查看</a></span>
-            {% endif %}
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">暂无新通知。</p>
-    {% endif %}
-  </section>
 
   {% if has_referee_profile and perms.scheduling.view_match %}
     <section class="card">
@@ -165,6 +143,29 @@
 
     </section>
   {% endif %}
+
+  <section class="card">
+    <div class="card-title">
+      <h2>新通知</h2>
+      <a href="{% url 'scheduling:notification_list' %}">
+        {% if unread_notifications %}查看全部通知并标为已读{% else %}查看历史通知{% endif %}
+      </a>
+    </div>
+    {% if unread_notifications %}
+      <ul class="item-list">
+        {% for notification in unread_notifications %}
+          <li>
+            <span>{{ notification.message }}</span>
+            {% if notification.link %}
+              <span class="item-links"><a href="{{ notification.link }}">查看</a></span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">暂无新通知。</p>
+    {% endif %}
+  </section>
 
   {% if user.is_staff %}
     <section class="card span-all banner-card">

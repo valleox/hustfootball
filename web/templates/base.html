@@ -3,8 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f5f5f7">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <title>{% block title %}{{ org_name }}{% endblock %}</title>
+  <script>
+    (function () {
+      var theme = "auto";
+      try { theme = localStorage.getItem("theme") || "auto"; } catch (e) {}
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
   <link rel="icon" href="{% static 'brand/hustfa.webp' %}" type="image/webp">
   <link rel="apple-touch-icon" href="{% static 'brand/hustfa.webp' %}">
   <style>
@@ -29,12 +37,89 @@
       --warning-soft: rgba(255, 159, 10, 0.16);
       --danger: #c9302c;
       --danger-soft: rgba(255, 59, 48, 0.12);
+      --surface: rgba(255, 255, 255, 0.55);
+      --surface-strong: rgba(255, 255, 255, 0.85);
+      --surface-solid: #ffffff;
+      --input-bg: rgba(255, 255, 255, 0.82);
+      --input-border: rgba(0, 0, 0, 0.12);
+      --hover-tint: rgba(0, 0, 0, 0.05);
+      --secondary-bg: rgba(255, 255, 255, 0.7);
+      --ambient-1: rgba(0, 102, 204, 0.16);
+      --ambient-2: rgba(90, 200, 250, 0.16);
+      --ambient-3: rgba(31, 64, 154, 0.12);
+      color-scheme: light;
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 18px;
       --radius-xl: 24px;
       --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
         "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    }
+
+    /* 深色模式：跟随系统，或由右上角「外观」按钮指定 */
+    :root[data-theme="dark"] {
+      --primary: #2997ff;
+      --primary-focus: #47a6ff;
+      --primary-soft: rgba(41, 151, 255, 0.16);
+      --ink: #f5f5f7;
+      --ink-muted: #a1a1a6;
+      --ink-faint: #86868b;
+      --canvas: #000000;
+      --hairline: rgba(255, 255, 255, 0.12);
+      --glass: rgba(28, 28, 30, 0.62);
+      --glass-strong: rgba(22, 22, 24, 0.78);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), 0 10px 36px rgba(0, 0, 0, 0.45);
+      --success: #30d158;
+      --success-soft: rgba(48, 209, 88, 0.16);
+      --warning: #ffb340;
+      --warning-soft: rgba(255, 159, 10, 0.18);
+      --danger: #ff6961;
+      --danger-soft: rgba(255, 69, 58, 0.18);
+      --surface: rgba(255, 255, 255, 0.05);
+      --surface-strong: rgba(255, 255, 255, 0.1);
+      --surface-solid: #1c1c1e;
+      --input-bg: rgba(255, 255, 255, 0.06);
+      --input-border: rgba(255, 255, 255, 0.16);
+      --hover-tint: rgba(255, 255, 255, 0.08);
+      --secondary-bg: rgba(255, 255, 255, 0.06);
+      --ambient-1: rgba(41, 151, 255, 0.22);
+      --ambient-2: rgba(90, 200, 250, 0.12);
+      --ambient-3: rgba(94, 92, 230, 0.16);
+      color-scheme: dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --primary: #2997ff;
+        --primary-focus: #47a6ff;
+        --primary-soft: rgba(41, 151, 255, 0.16);
+        --ink: #f5f5f7;
+        --ink-muted: #a1a1a6;
+        --ink-faint: #86868b;
+        --canvas: #000000;
+        --hairline: rgba(255, 255, 255, 0.12);
+        --glass: rgba(28, 28, 30, 0.62);
+        --glass-strong: rgba(22, 22, 24, 0.78);
+        --glass-border: rgba(255, 255, 255, 0.08);
+        --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), 0 10px 36px rgba(0, 0, 0, 0.45);
+        --success: #30d158;
+        --success-soft: rgba(48, 209, 88, 0.16);
+        --warning: #ffb340;
+        --warning-soft: rgba(255, 159, 10, 0.18);
+        --danger: #ff6961;
+        --danger-soft: rgba(255, 69, 58, 0.18);
+        --surface: rgba(255, 255, 255, 0.05);
+        --surface-strong: rgba(255, 255, 255, 0.1);
+        --surface-solid: #1c1c1e;
+        --input-bg: rgba(255, 255, 255, 0.06);
+        --input-border: rgba(255, 255, 255, 0.16);
+        --hover-tint: rgba(255, 255, 255, 0.08);
+        --secondary-bg: rgba(255, 255, 255, 0.06);
+        --ambient-1: rgba(41, 151, 255, 0.22);
+        --ambient-2: rgba(90, 200, 250, 0.12);
+        --ambient-3: rgba(94, 92, 230, 0.16);
+        color-scheme: dark;
+      }
     }
 
     * { box-sizing: border-box; }
@@ -60,9 +145,9 @@
       z-index: -1;
       pointer-events: none;
       background:
-        radial-gradient(48vmax 48vmax at 8% -6%, rgba(0, 102, 204, 0.16), transparent 62%),
-        radial-gradient(42vmax 42vmax at 100% 8%, rgba(90, 200, 250, 0.16), transparent 60%),
-        radial-gradient(52vmax 52vmax at 70% 110%, rgba(31, 64, 154, 0.12), transparent 62%);
+        radial-gradient(48vmax 48vmax at 8% -6%, var(--ambient-1), transparent 62%),
+        radial-gradient(42vmax 42vmax at 100% 8%, var(--ambient-2), transparent 60%),
+        radial-gradient(52vmax 52vmax at 70% 110%, var(--ambient-3), transparent 62%);
     }
 
     a { color: var(--primary); text-decoration: none; }
@@ -147,10 +232,13 @@
     }
     .header-actions a:hover,
     .header-actions button:hover {
-      background: rgba(0, 0, 0, 0.05);
+      background: var(--hover-tint);
       text-decoration: none;
     }
     .header-actions form { margin: 0; }
+    .theme-toggle .theme-icon { width: 18px; text-align: center; }
+    .header-actions a,
+    .header-actions button { flex: none; white-space: nowrap; }
 
     /* ===== 布局 ===== */
     main {
@@ -162,7 +250,7 @@
     }
     .page-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 20px;
       align-items: stretch;
     }
@@ -207,6 +295,7 @@
     }
     .card + .card { margin-top: 20px; }
     .page-grid .card + .card { margin-top: 0; }
+    .page-grid > .card:not(.span-all) { padding: 24px; }
     .card > h2:first-child { margin-top: 0; }
     .card-title {
       display: flex;
@@ -215,7 +304,9 @@
       gap: 12px;
       margin: 0 0 16px;
     }
-    .card-title h2 { margin: 0; }
+    .card-title { flex-wrap: wrap; }
+    .card-title h2 { margin: 0; white-space: nowrap; }
+    .card-title a { font-size: 15px; }
     .login-card { max-width: 440px; margin: 24px auto; }
     .login-brand {
       display: flex;
@@ -258,12 +349,12 @@
     .button-link:active { transform: scale(0.95); }
     button.secondary,
     .button-link.secondary {
-      background: rgba(255, 255, 255, 0.7);
+      background: var(--secondary-bg);
       color: var(--primary);
-      border-color: rgba(0, 102, 204, 0.35);
+      border-color: color-mix(in srgb, var(--primary) 40%, transparent);
     }
     button.secondary:hover,
-    .button-link.secondary:hover { background: #fff; }
+    .button-link.secondary:hover { background: var(--surface-strong); }
     .full-width { width: 100%; }
     /* 并列按钮统一宽度：每一列等宽，窄屏时自动换行 */
     .form-actions {
@@ -302,9 +393,9 @@
       width: 100%;
       min-height: 44px;
       padding: 10px 14px;
-      border: 1px solid rgba(0, 0, 0, 0.12);
+      border: 1px solid var(--input-border);
       border-radius: var(--radius-md);
-      background: rgba(255, 255, 255, 0.82);
+      background: var(--input-bg);
       color: var(--ink);
       font: inherit;
       font-size: 17px;
@@ -315,8 +406,8 @@
     textarea:focus {
       outline: none;
       border-color: var(--primary-focus);
-      box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.18);
-      background: #fff;
+      box-shadow: 0 0 0 4px var(--primary-soft);
+      background: var(--surface-solid);
     }
     input[type="checkbox"],
     input[type="radio"] {
@@ -411,13 +502,13 @@
       padding: 14px 16px;
       border: 1px solid var(--hairline);
       border-radius: var(--radius-lg);
-      background: rgba(255, 255, 255, 0.55);
+      background: var(--surface);
       color: inherit;
     }
     .match-item { transition: background-color 0.2s, border-color 0.2s, transform 0.15s; }
     .match-item:hover {
-      border-color: rgba(0, 102, 204, 0.35);
-      background: rgba(255, 255, 255, 0.85);
+      border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+      background: var(--surface-strong);
       text-decoration: none;
     }
     .match-item:active { transform: scale(0.99); }
@@ -425,7 +516,7 @@
     .match-teams { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
     .item-title { font-weight: 600; }
     .item-links { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px; }
-    .notification-list li.unread { border-color: rgba(0, 102, 204, 0.35); background: rgba(255, 255, 255, 0.85); }
+    .notification-list li.unread { border-color: color-mix(in srgb, var(--primary) 40%, transparent); background: var(--surface-strong); }
     .match-row { display: flex; align-items: center; gap: 12px; }
     .match-row .match-item { flex: 1; min-width: 0; }
     .publish-checkbox,
@@ -446,7 +537,7 @@
       border-spacing: 0;
       border: 1px solid var(--hairline);
       border-radius: var(--radius-lg);
-      background: rgba(255, 255, 255, 0.55);
+      background: var(--surface);
       overflow: hidden;
     }
     th,
@@ -457,7 +548,7 @@
       vertical-align: top;
     }
     tr:last-child td { border-bottom: 0; }
-    th { color: var(--ink-muted); font-size: 13px; font-weight: 600; background: rgba(255, 255, 255, 0.5); }
+    th { color: var(--ink-muted); font-size: 13px; font-weight: 600; background: var(--surface); }
     .table-scroll { overflow-x: auto; margin-top: 16px; border-radius: var(--radius-lg); }
     .data-table { white-space: nowrap; }
     .sr-only {
@@ -478,12 +569,12 @@
 
     /* 不支持毛玻璃的浏览器使用实色背景 */
     @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-      .site-header { background: rgba(255, 255, 255, 0.96); }
-      .card { background: rgba(255, 255, 255, 0.92); }
+      .site-header,
+      .card { background: var(--surface-solid); }
     }
     @media (prefers-reduced-transparency: reduce) {
       .site-header,
-      .card { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
+      .card { background: var(--surface-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
     }
 
     /* ===== 手机 ===== */
@@ -503,6 +594,14 @@
         margin: 0 -6px;
       }
       .page-grid { grid-template-columns: 1fr; }
+      /* 手机上「外观」只显示图标，文字保留给读屏 */
+      .theme-toggle .theme-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
       .detail-list { grid-template-columns: 1fr; gap: 2px; }
       .detail-list dd { margin-bottom: 12px; }
     }
@@ -524,8 +623,12 @@
         </span>
         <span class="brand-name">{{ org_name }}</span>
       </a>
+      <nav class="header-actions" aria-label="主导航">
+        <button type="button" class="theme-toggle" aria-live="polite">
+          <span class="theme-icon" aria-hidden="true">◐</span>
+          <span class="theme-label">外观：自动</span>
+        </button>
       {% if user.is_authenticated %}
-        <nav class="header-actions" aria-label="主导航">
           <a href="{% url 'scheduling:home' %}">首页</a>
           <a href="{% url 'scheduling:notification_list' %}">
             通知{% if unread_notification_count %}
@@ -540,8 +643,8 @@
             {% csrf_token %}
             <button type="submit">退出登录</button>
           </form>
-        </nav>
       {% endif %}
+      </nav>
     </div>
   </header>
 
@@ -551,6 +654,30 @@
     {% endfor %}
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+    // 外观切换：自动 → 浅色 → 深色，与管理后台共用同一设置
+    (function () {
+      var order = ["auto", "light", "dark"];
+      var labels = { auto: ["◐", "外观：自动"], light: ["☀", "外观：浅色"], dark: ["☾", "外观：深色"] };
+      function apply(theme) {
+        document.documentElement.dataset.theme = theme;
+        document.querySelectorAll(".theme-toggle").forEach(function (button) {
+          button.querySelector(".theme-icon").textContent = labels[theme][0];
+          button.querySelector(".theme-label").textContent = labels[theme][1];
+        });
+      }
+      apply(document.documentElement.dataset.theme || "auto");
+      document.querySelectorAll(".theme-toggle").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var current = document.documentElement.dataset.theme || "auto";
+          var next = order[(order.indexOf(current) + 1) % order.length];
+          try { localStorage.setItem("theme", next); } catch (e) {}
+          apply(next);
+        });
+      });
+    })();
+  </script>
 
   <footer class="site-footer">
     © {% now "Y" %} {{ org_name }} · 裁判管理系统

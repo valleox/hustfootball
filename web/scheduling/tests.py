@@ -2451,7 +2451,11 @@ class FeedbackRoundThreeTests(TestCase):
         when = html.index(f"{kickoff:%Y年%m月%d日}")
         self.assertLess(meta, teams)
         self.assertLess(teams, when)
-        self.assertContains(response, "编辑比赛")
+        self.assertNotContains(response, "编辑比赛")
+        self.assertContains(
+            response,
+            f'href="{reverse("admin:scheduling_match_change", args=[self.match.pk])}"',
+        )
 
     def test_match_label_lists_teams_before_time(self):
         label = str(self.match)
@@ -2473,7 +2477,7 @@ class FeedbackRoundThreeTests(TestCase):
         response = self.client.get(reverse("admin:scheduling_match_changelist"))
 
         self.assertContains(response, "clickable-row")
-        self.assertContains(response, 'class="chip-link row-link"')
+        self.assertContains(response, 'class="match-link row-link"')
 
     def test_groups_are_named_roles(self):
         index = self.client.get(reverse("admin:index"))
@@ -2488,3 +2492,29 @@ class FeedbackRoundThreeTests(TestCase):
         self.assertContains(change, "裁判排班 | 比赛 | 新增比赛")
         self.assertContains(change, "可以发布裁判安排")
         self.assertNotContains(change, "Can add match")
+
+
+class DarkModeTests(TestCase):
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_superuser(
+            "dark_admin",
+            "dark@example.test",
+            "x-password-123",
+        )
+
+    def test_front_end_has_dark_tokens_and_toggle(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, ':root[data-theme="dark"]')
+        self.assertContains(response, "prefers-color-scheme: dark")
+        self.assertContains(response, 'class="theme-toggle"')
+        self.assertContains(response, 'localStorage.getItem("theme")')
+
+    def test_admin_has_dark_tokens_and_toggle(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse("admin:index"))
+
+        self.assertContains(response, 'html[data-theme="dark"]')
+        self.assertContains(response, "hfa-theme-toggle")
+        self.assertNotContains(response, "admin/css/dark_mode.css")

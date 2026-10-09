@@ -40,7 +40,7 @@ def update_response_time(assignment, status_changed=False):
 WEEKDAYS = "一二三四五六日"
 
 
-def match_overview_html(match, link_url, link_text):
+def match_overview_html(match, link_url):
     """后台列表中的比赛摘要：赛事与轮次 → 对阵 → 日期时间与场地。"""
     meta = " · ".join(
         part
@@ -58,18 +58,18 @@ def match_overview_html(match, link_url, link_text):
     )
     return format_html(
         '<div class="match-cell">'
+        '<a class="match-link row-link" href="{}">'
         '<span class="match-meta">{}</span>'
         '<strong class="match-teams">{} vs {}</strong>'
+        "</a>"
         '<span class="match-time">{} · {}</span>'
-        '<a class="chip-link row-link" href="{}">{}</a>'
         "</div>",
+        link_url,
         meta,
         match.home_team,
         match.away_team,
         when,
         match.venue,
-        link_url,
-        link_text,
     )
 
 
@@ -186,7 +186,6 @@ class MatchAdmin(admin.ModelAdmin):
         return match_overview_html(
             obj,
             reverse("admin:scheduling_match_change", args=[obj.pk]),
-            "编辑比赛",
         )
 
     def get_queryset(self, request):
@@ -379,11 +378,6 @@ class NotificationAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at",)
 
 
-RESPONSE_COLORS = {
-    Assignment.ResponseStatus.PENDING: "#b54708",
-    Assignment.ResponseStatus.CONFIRMED: "#067647",
-    Assignment.ResponseStatus.LEAVE: "#b42318",
-}
 
 
 def assignments_by_position(match):
@@ -400,17 +394,17 @@ def position_column(position, label):
     def column(self, obj):
         assignment = assignments_by_position(obj).get(position)
         if assignment is None:
-            return format_html('<span style="color:#98a2b3">{}</span>', "未安排")
+            return format_html('<span class="resp resp-empty">{}</span>', "未安排")
 
         return format_html(
             '<a class="chip-link" href="{}">{}</a><br>'
-            '<span style="color:{}">{}</span>',
+            '<span class="resp resp-{}">{}</span>',
             reverse(
                 "admin:scheduling_assignment_change",
                 args=[assignment.pk],
             ),
             assignment.referee.name,
-            RESPONSE_COLORS.get(assignment.response_status, "inherit"),
+            assignment.response_status,
             assignment.get_response_status_display(),
         )
 
@@ -479,7 +473,6 @@ class MatchAssignmentSummaryAdmin(admin.ModelAdmin):
         return match_overview_html(
             obj,
             reverse("admin:scheduling_match_change", args=[obj.pk]),
-            "编辑比赛与裁判",
         )
 
     def changelist_view(self, request, extra_context=None):
