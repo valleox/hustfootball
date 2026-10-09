@@ -34,14 +34,14 @@ jobs:
       DJANGO_SECRET_KEY: migration-only-not-used-for-serving
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Check secret is configured
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::未设置 ${{ inputs.target == 'production' && 'PRODUCTION_DATABASE_URL' || 'PREVIEW_DATABASE_URL' }}"
             exit 1
           fi
-
-      - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
