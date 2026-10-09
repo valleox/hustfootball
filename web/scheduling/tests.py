@@ -2094,6 +2094,19 @@ class SiteNavigationTests(TestCase):
         self.assertContains(response, ">首页</a>")
         self.assertNotContains(response, "足协裁判管理系统")
 
+    def test_login_page_title_uses_site_name(self):
+        self.client.logout()
+
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(
+            response,
+            "<title>用户登录 · 华中科技大学足球协会</title>",
+            html=True,
+        )
+        self.assertContains(response, "华中科技大学足球协会")
+        self.assertNotContains(response, "testserver")
+
     def test_match_list_links_back_home(self):
         response = self.client.get(reverse("scheduling:match_list"))
 

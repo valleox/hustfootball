@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <title>{% block title %}{{ org_name }}{% endblock %}</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -203,7 +203,7 @@
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="{% url 'scheduling:home' %}">
-        {{ site_name }}
+        {{ org_name }}
       </a>
       {% if user.is_authenticated %}
         <div class="header-actions">

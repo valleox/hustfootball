@@ -2,7 +2,8 @@ from django.conf import settings
 
 
 def site(request):
-    return {"site_name": settings.SITE_NAME}
+    # 不能叫 site_name：Django 登录页会用当前域名覆盖同名变量。
+    return {"org_name": settings.SITE_NAME}
 
 
 def notifications(request):
