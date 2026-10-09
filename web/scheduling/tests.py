@@ -2516,5 +2516,8 @@ class DarkModeTests(TestCase):
         response = self.client.get(reverse("admin:index"))
 
         self.assertContains(response, 'html[data-theme="dark"]')
+        # Django 的 base.css 用 html[data-theme="light"] 定义默认配色，
+        # 浅色令牌必须用同等优先级的选择器覆盖，否则选「浅色」会退回原版后台。
+        self.assertContains(response, 'html[data-theme="light"] {')
         self.assertContains(response, "hfa-theme-toggle")
         self.assertNotContains(response, "admin/css/dark_mode.css")
