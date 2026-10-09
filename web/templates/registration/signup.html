@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}修改密码 · {{ org_name }}{% endblock %}
+{% block title %}裁判注册 · {{ org_name }}{% endblock %}
 
 {% block content %}
 <section class="card login-card">
-  <h1>修改密码</h1>
-  <p class="muted">修改后需要使用新密码登录其他设备。</p>
+  <h1>裁判注册</h1>
+  <p class="muted">需要排班管理员提供的邀请码。注册后即可查看和确认自己的裁判安排。</p>
 
   <form method="post" novalidate>
     {% csrf_token %}
@@ -22,10 +22,11 @@
       </div>
     {% endfor %}
 
-    <div class="form-actions">
-      <button type="submit">保存新密码</button>
-      <a href="{% url 'scheduling:home' %}">取消</a>
-    </div>
+    <button class="full-width" type="submit">注册</button>
   </form>
+
+  <p class="muted">
+    已有账号？<a href="{% url 'login' %}">返回登录</a>
+  </p>
 </section>
 {% endblock %}

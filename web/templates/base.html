@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}足协裁判管理系统{% endblock %}</title>
+  <title>{% block title %}{{ org_name }}{% endblock %}</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -33,6 +33,7 @@
     .header-actions {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 16px;
     }
     main { max-width: 900px; margin: auto; padding: 24px 16px; }
@@ -132,6 +133,62 @@
       gap: 16px;
       margin-top: 24px;
     }
+    .badge {
+      display: inline-block;
+      min-width: 20px;
+      padding: 0 6px;
+      border-radius: 10px;
+      background: #d92d20;
+      color: white;
+      font-size: 13px;
+      text-align: center;
+    }
+    .notification-list { padding: 0; list-style: none; }
+    .notification-list li {
+      padding: 12px 0;
+      border-bottom: 1px solid #dce5e0;
+    }
+    .notification-list li.unread { font-weight: 600; }
+    .match-row { display: flex; align-items: center; gap: 10px; }
+    .match-row .match-item { flex: 1; min-width: 0; }
+    .publish-checkbox,
+    .checkbox-placeholder {
+      flex: none;
+      width: 22px;
+      height: 22px;
+      min-height: 0;
+    }
+    button.secondary {
+      background: white;
+      color: #146c52;
+      border-color: #146c52;
+    }
+    .status-tag {
+      display: inline-block;
+      padding: 0 8px;
+      border-radius: 10px;
+      background: #fff4e5;
+      color: #8a4b00;
+      font-size: 13px;
+    }
+    .status-tag.published { background: #e6f2eb; color: #145540; }
+    .table-scroll { overflow-x: auto; margin-top: 16px; }
+    .data-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+    .data-table th,
+    .data-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #dce5e0;
+      text-align: left;
+    }
+    .data-table th { color: #59675f; font-size: 14px; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+    form.form-actions select { width: auto; flex: 1 1 200px; }
     @media (max-width: 600px) {
       .card { padding: 18px; }
       .detail-list {
@@ -146,10 +203,16 @@
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="{% url 'scheduling:home' %}">
-        足协裁判管理系统
+        {{ org_name }}
       </a>
       {% if user.is_authenticated %}
         <div class="header-actions">
+          <a href="{% url 'scheduling:home' %}">首页</a>
+          <a href="{% url 'scheduling:notification_list' %}">
+            通知{% if unread_notification_count %}
+              <span class="badge">{{ unread_notification_count }}</span>
+            {% endif %}
+          </a>
           <a href="{% url 'password_change' %}">修改密码</a>
           <form method="post" action="{% url 'logout' %}">
             {% csrf_token %}

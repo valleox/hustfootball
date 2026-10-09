@@ -68,6 +68,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                "scheduling.context_processors.site",
+                "scheduling.context_processors.notifications",
             ],
         },
     },
@@ -102,6 +104,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
 LANGUAGE_CODE = 'zh-hans'
+
+# 项目自带的翻译（补充第三方应用缺少的简体中文）；以后增加英文切换也放在这里。
+LOCALE_PATHS = [BASE_DIR / "locale"]
 
 TIME_ZONE = 'UTC'
 
@@ -238,6 +243,9 @@ else:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = False
     SECURE_HSTS_PRELOAD = False
 
+# 网站名称（页面标题、后台标题、邮件和导出文件都使用这里）
+SITE_NAME = "华中科技大学足球协会"
+
 # 用户登录与退出
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "scheduling:home"
@@ -259,3 +267,23 @@ SILENCED_SYSTEM_CHECKS = ["axes.W006"]
 AXES_RESET_ON_SUCCESS = True
 AXES_LOCKOUT_TEMPLATE = "registration/locked_out.html"
 AXES_CLIENT_IP_CALLABLE = "scheduling.auth.client_ip"
+
+# 邮件通知（SMTP）。未设置 EMAIL_HOST 时只发站内通知。
+# 例：QQ 邮箱 smtp.qq.com:465，163 邮箱 smtp.163.com:465，密码填邮箱的 SMTP 授权码。
+EMAIL_NOTIFICATIONS_ENABLED = bool(os.environ.get("EMAIL_HOST"))
+
+if EMAIL_NOTIFICATIONS_ENABLED:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = os.environ["EMAIL_HOST"]
+    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "465"))
+    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "1") == "1"
+    EMAIL_USE_TLS = not EMAIL_USE_SSL and (
+        os.environ.get("EMAIL_USE_TLS", "0") == "1"
+    )
+    EMAIL_TIMEOUT = 10
+    DEFAULT_FROM_EMAIL = os.environ.get(
+        "DEFAULT_FROM_EMAIL",
+        EMAIL_HOST_USER,
+    )

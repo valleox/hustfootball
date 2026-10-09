@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}比赛列表 · 足协裁判管理系统{% endblock %}
+{% block title %}比赛列表 · {{ org_name }}{% endblock %}
 
 {% block content %}
 <section class="card">
+  <p><a href="{% url 'scheduling:home' %}">返回首页</a></p>
   <h1>比赛列表</h1>
   <p class="muted">查看已经录入系统的比赛场次。</p>
   {% if perms.scheduling.add_match or perms.scheduling.publish_assignments %}
@@ -25,9 +26,39 @@
   {% endif %}
 
   <h2>今天及之后的比赛</h2>
+
+  {% if perms.scheduling.publish_assignments %}
+    <form method="post"
+          action="{% url 'scheduling:assignment_bulk_publish' %}"
+          id="bulk-publish-form">
+      {% csrf_token %}
+      <p class="muted">
+        勾选四个岗位都已安排的草稿比赛，可一次发布并通知裁判。
+      </p>
+      <div class="form-actions bulk-actions">
+        <button type="button" class="secondary" id="select-publishable">
+          全选可发布
+        </button>
+        <button type="submit">发布所选</button>
+      </div>
+  {% endif %}
+
   <ul class="match-list">
     {% for match in upcoming_matches %}
-      <li>
+      <li class="match-row">
+        {% if perms.scheduling.publish_assignments %}
+          {% if match.assignment_status == "draft" and match.status == "scheduled" %}
+            <input type="checkbox"
+                   class="publish-checkbox"
+                   name="match_ids"
+                   value="{{ match.pk }}"
+                   form="bulk-publish-form"
+                   aria-label="选择 {{ match.home_team }} vs {{ match.away_team }}"
+                   {% if match.assigned_count >= 4 %}data-publishable="1"{% endif %}>
+          {% else %}
+            <span class="checkbox-placeholder"></span>
+          {% endif %}
+        {% endif %}
         <a class="match-item"
            href="{% url 'scheduling:match_detail' match.pk %}">
           <strong>
@@ -37,8 +68,15 @@
             {{ match.home_team }} vs {{ match.away_team }}
           </span>
           <span class="muted">
-            {{ match.competition }} · {{ match.venue }}
+            {{ match.competition }}{% if match.round_name %} · {{ match.round_name }}{% endif %}
+            · {{ match.venue }}
             · {{ match.get_status_display }}
+          </span>
+          <span>
+            <span class="status-tag {% if match.assignment_status == 'published' %}published{% endif %}">
+              {{ match.get_assignment_status_display }}
+            </span>
+            <span class="muted">已安排 {{ match.assigned_count }}/4 个岗位</span>
           </span>
         </a>
       </li>
@@ -46,6 +84,17 @@
       <li class="muted">目前没有今天及之后的比赛。</li>
     {% endfor %}
   </ul>
+
+  {% if perms.scheduling.publish_assignments %}
+    </form>
+    <script>
+      document.getElementById("select-publishable").addEventListener("click", function () {
+        document.querySelectorAll(".publish-checkbox").forEach(function (box) {
+          box.checked = box.dataset.publishable === "1";
+        });
+      });
+    </script>
+  {% endif %}
 
   <h2>历史比赛</h2>
   <ul class="match-list">

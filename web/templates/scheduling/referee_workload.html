@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}裁判工作量 · {{ org_name }}{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p><a href="{% url 'scheduling:home' %}">返回首页</a></p>
+
+  <h1>裁判工作量</h1>
+  <p class="muted">
+    统计所有未取消比赛中的安排（含尚未发布的草稿）。
+    「确认」「请假」为当前反馈状态；被更换掉的请假不再计入。
+  </p>
+
+  <form method="get" class="form-actions">
+    <label for="competition" class="sr-only">赛事</label>
+    <select id="competition" name="competition">
+      <option value="">全部赛事</option>
+      {% for competition in competitions %}
+        <option value="{{ competition.pk }}"
+          {% if competition == selected_competition %}selected{% endif %}>
+          {{ competition }}
+        </option>
+      {% endfor %}
+    </select>
+    <button type="submit">筛选</button>
+  </form>
+
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>裁判</th>
+          <th>等级</th>
+          <th>总场次</th>
+          <th>主裁</th>
+          <th>助理</th>
+          <th>第四官员</th>
+          <th>已确认</th>
+          <th>请假</th>
+          <th>即将执法</th>
+          <th>最近一场</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for referee in referees %}
+          <tr>
+            <td>
+              {{ referee.name }}
+              {% if not referee.is_active %}
+                <span class="muted">（停用）</span>
+              {% endif %}
+            </td>
+            <td>{{ referee.get_level_display }}</td>
+            <td><strong>{{ referee.total }}</strong></td>
+            <td>{{ referee.as_referee }}</td>
+            <td>{{ referee.as_assistant }}</td>
+            <td>{{ referee.as_fourth }}</td>
+            <td>{{ referee.confirmed }}</td>
+            <td>{{ referee.on_leave }}</td>
+            <td>{{ referee.upcoming }}</td>
+            <td>
+              {% if referee.last_match_at %}
+                {{ referee.last_match_at|date:"n月j日" }}
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="10" class="muted">暂无裁判。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,10 +1,15 @@
 from io import BytesIO
 from urllib.parse import quote
 
+from django import forms as django_forms
+from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Count, Max, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
@@ -17,8 +22,17 @@ from .forms import (
     AssignmentForm,
     AssignmentResponseForm,
     MatchForm,
+    RefereeSignupForm,
 )
-from .models import Assignment, Match, RefereeProfile
+from .models import (
+    Assignment,
+    Competition,
+    Match,
+    Notification,
+    RefereeProfile,
+)
+from .notifications import notify_leave_request
+from .publishing import publish_match, publish_matches
 
 
 @never_cache
@@ -28,6 +42,9 @@ def home(request):
         "has_referee_profile": False,
         "pending_assignments": [],
         "upcoming_assignments": [],
+        "unread_notifications": request.user.notifications.filter(
+            read_at__isnull=True
+        )[:5],
     }
 
     try:
@@ -102,7 +119,7 @@ def match_list(request):
         "home_team",
         "away_team",
         "venue",
-    )
+    ).annotate(assigned_count=Count("assignments"))
 
     context = {
         "upcoming_matches": matches.filter(
@@ -173,7 +190,7 @@ def assignment_export(request):
         end_column=len(headers),
     )
     title_cell = worksheet["A1"]
-    title_cell.value = "足协裁判安排表"
+    title_cell.value = f"{settings.SITE_NAME}裁判安排表"
     title_cell.font = Font(
         name="微软雅黑",
         size=16,
@@ -579,70 +596,57 @@ def assignment_update(request, pk):
 @require_POST
 def assignment_publish(request, pk):
     match = get_object_or_404(Match, pk=pk)
+    ok, notified, problem = publish_match(request, match)
 
-    if (
-        match.assignment_status
-        == Match.AssignmentStatus.PUBLISHED
-    ):
-        messages.info(request, "本场裁判安排已经发布。")
-        return redirect(
-            "scheduling:match_detail",
-            pk=match.pk,
-        )
-
-    if match.status != Match.Status.SCHEDULED:
-        messages.error(
+    if ok:
+        messages.success(
             request,
-            f"本场比赛{match.get_status_display()}，不能发布裁判安排。",
+            f"裁判安排已经发布，已通知 {notified} 名裁判。",
         )
-        return redirect(
-            "scheduling:match_detail",
-            pk=match.pk,
-        )
+    elif match.assignment_status == Match.AssignmentStatus.PUBLISHED:
+        messages.info(request, problem)
+    else:
+        messages.error(request, problem)
 
-    required_positions = {
-        position
-        for position, _label in Assignment.Position.choices
-    }
-    assigned_positions = set(
-        match.assignments.values_list(
-            "position",
-            flat=True,
-        )
-    )
-    missing_positions = required_positions - assigned_positions
-
-    if missing_positions:
-        position_labels = dict(Assignment.Position.choices)
-        missing_labels = [
-            position_labels[position]
-            for position in sorted(missing_positions)
-        ]
-        messages.error(
-            request,
-            "还不能发布，以下岗位尚未安排："
-            f"{'、'.join(missing_labels)}。",
-        )
-        return redirect(
-            "scheduling:match_detail",
-            pk=match.pk,
-        )
-
-    match.assignment_status = Match.AssignmentStatus.PUBLISHED
-    match.published_at = timezone.now()
-    match.save(
-        update_fields=[
-            "assignment_status",
-            "published_at",
-            "updated_at",
-        ]
-    )
-
-    messages.success(request, "裁判安排已经发布。")
     return redirect(
         "scheduling:match_detail",
         pk=match.pk,
     )
+
+
+@login_required
+@permission_required(
+    "scheduling.publish_assignments",
+    raise_exception=True,
+)
+@require_POST
+def assignment_bulk_publish(request):
+    match_ids = [
+        int(value)
+        for value in request.POST.getlist("match_ids")
+        if value.isdigit()
+    ]
+
+    if not match_ids:
+        messages.error(request, "请先勾选要发布的比赛。")
+        return redirect("scheduling:match_list")
+
+    matches = Match.objects.filter(pk__in=match_ids).select_related(
+        "home_team",
+        "away_team",
+    ).order_by("kickoff_at", "id")
+    published, notified, skipped = publish_matches(request, matches)
+
+    if published:
+        messages.success(
+            request,
+            f"已发布 {published} 场比赛的裁判安排，"
+            f"已通知 {notified} 名裁判。",
+        )
+    for reason in skipped:
+        messages.error(request, f"未发布：{reason}")
+
+    return redirect("scheduling:match_list")
 
 
 @login_required
@@ -676,6 +680,7 @@ def assignment_respond(request, pk):
             pk=assignment.match_id,
         )
 
+    previous_status = assignment.response_status
     form = AssignmentResponseForm(
         request.POST if request.method == "POST" else None,
         instance=assignment,
@@ -699,7 +704,12 @@ def assignment_respond(request, pk):
         ):
             messages.success(request, "已经确认参加本场执法。")
         else:
-            messages.success(request, "请假申请已经提交。")
+            if previous_status != Assignment.ResponseStatus.LEAVE:
+                notify_leave_request(request, assignment)
+            messages.success(
+                request,
+                "请假申请已经提交，已通知排班管理员。",
+            )
 
         return redirect(
             "scheduling:match_detail",
@@ -714,3 +724,151 @@ def assignment_respond(request, pk):
             "form": form,
         },
     )
+
+
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect("scheduling:home")
+
+    form = RefereeSignupForm(
+        request.POST if request.method == "POST" else None
+    )
+
+    if request.method == "POST" and form.is_valid():
+        try:
+            user = form.save()
+        except django_forms.ValidationError as error:
+            form.add_error("invite_code", error)
+        else:
+            login(
+                request,
+                user,
+                backend="django.contrib.auth.backends.ModelBackend",
+            )
+            messages.success(request, "注册成功，欢迎加入！")
+            return redirect("scheduling:home")
+
+    return render(
+        request,
+        "registration/signup.html",
+        {"form": form},
+    )
+
+
+@login_required
+@permission_required(
+    "scheduling.view_refereeprofile",
+    raise_exception=True,
+)
+def referee_workload(request):
+    competitions = Competition.objects.all()
+    selected_competition = None
+    competition_id = request.GET.get("competition", "")
+
+    if competition_id.isdigit():
+        selected_competition = competitions.filter(
+            pk=competition_id
+        ).first()
+
+    # 草稿也计入，排班时需要考虑尚未发布的安排；已取消的比赛不计。
+    counted = ~Q(assignments__match__status=Match.Status.CANCELLED)
+    if selected_competition is not None:
+        counted &= Q(
+            assignments__match__competition=selected_competition
+        )
+
+    now = timezone.now()
+
+    def count(extra=None):
+        condition = counted if extra is None else counted & extra
+        return Count("assignments", filter=condition)
+
+    referees = (
+        RefereeProfile.objects.annotate(
+            total=count(),
+            as_referee=count(
+                Q(assignments__position=Assignment.Position.REFEREE)
+            ),
+            as_assistant=count(
+                Q(
+                    assignments__position__in=[
+                        Assignment.Position.ASSISTANT_1,
+                        Assignment.Position.ASSISTANT_2,
+                    ]
+                )
+            ),
+            as_fourth=count(
+                Q(
+                    assignments__position=(
+                        Assignment.Position.FOURTH_OFFICIAL
+                    )
+                )
+            ),
+            confirmed=count(
+                Q(
+                    assignments__response_status=(
+                        Assignment.ResponseStatus.CONFIRMED
+                    )
+                )
+            ),
+            on_leave=count(
+                Q(
+                    assignments__response_status=(
+                        Assignment.ResponseStatus.LEAVE
+                    )
+                )
+            ),
+            upcoming=count(Q(assignments__match__kickoff_at__gte=now)),
+            last_match_at=Max(
+                "assignments__match__kickoff_at",
+                filter=counted
+                & Q(assignments__match__kickoff_at__lt=now),
+            ),
+        )
+        .filter(Q(is_active=True) | Q(total__gt=0))
+        .order_by("-total", "name")
+    )
+
+    return render(
+        request,
+        "scheduling/referee_workload.html",
+        {
+            "competitions": competitions,
+            "selected_competition": selected_competition,
+            "referees": referees,
+        },
+    )
+
+
+@never_cache
+@login_required
+def notification_list(request):
+    notifications = list(request.user.notifications.all()[:50])
+    unread_ids = [
+        notification.pk
+        for notification in notifications
+        if notification.read_at is None
+    ]
+
+    if unread_ids:
+        Notification.objects.filter(pk__in=unread_ids).update(
+            read_at=timezone.now()
+        )
+
+    return render(
+        request,
+        "scheduling/notification_list.html",
+        {
+            "notifications": notifications,
+            "unread_ids": set(unread_ids),
+            # 本页打开后全部已读，页首不再显示未读数。
+            "unread_notification_count": 0,
+        },
+    )
+
+
+def admin_login_redirect(request):
+    """后台登录统一使用网站的登录页，保留 next 参数。"""
+    query = request.GET.copy()
+    query.setdefault("next", reverse("admin:index"))
+    return redirect(f"{reverse('login')}?{query.urlencode()}")

@@ -1,6 +1,9 @@
+import secrets
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 
 class TimeStampedModel(models.Model):
@@ -217,7 +220,18 @@ class Match(TimeStampedModel):
             raise ValidationError("主队和客队不能是同一支球队。")
 
     def __str__(self):
-        return f"{self.home_team} vs {self.away_team}"
+        # 后台下拉框等处显示，需要能区分同名对阵：赛事 · 轮次 · 场次 · 时间 · 对阵。
+        parts = [str(self.competition)]
+        if self.round_name:
+            parts.append(self.round_name)
+        if self.match_number:
+            parts.append(f"场次 {self.match_number}")
+        if self.kickoff_at:
+            parts.append(
+                timezone.localtime(self.kickoff_at).strftime("%m月%d日 %H:%M")
+            )
+        parts.append(f"{self.home_team} vs {self.away_team}")
+        return " · ".join(parts)
 
 
 class Assignment(TimeStampedModel):
@@ -276,8 +290,8 @@ class Assignment(TimeStampedModel):
     )
 
     class Meta:
-        verbose_name = "裁判安排"
-        verbose_name_plural = "裁判安排"
+        verbose_name = "裁判安排明细"
+        verbose_name_plural = "裁判安排明细"
         ordering = ["match__kickoff_at", "position"]
         constraints = [
             models.UniqueConstraint(
@@ -296,3 +310,104 @@ class Assignment(TimeStampedModel):
             f"{self.get_position_display()} - "
             f"{self.referee}"
         )
+
+
+# 去掉容易混淆的 0/O、1/I/L，方便口头或截图传播。
+INVITE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def generate_invite_code():
+    return "".join(
+        secrets.choice(INVITE_CODE_ALPHABET) for _ in range(10)
+    )
+
+
+class InviteCode(TimeStampedModel):
+    """裁判自助注册使用的邀请码。"""
+
+    code = models.CharField(
+        "邀请码",
+        max_length=40,
+        unique=True,
+        default=generate_invite_code,
+        help_text="注册时不区分大小写。建议使用自动生成的随机码。",
+    )
+    note = models.CharField(
+        "备注",
+        max_length=100,
+        blank=True,
+        help_text="例如：2026 秋季裁判群",
+    )
+    is_active = models.BooleanField("是否启用", default=True)
+    expires_at = models.DateTimeField(
+        "过期时间",
+        null=True,
+        blank=True,
+        help_text="留空表示不过期。",
+    )
+    max_uses = models.PositiveIntegerField(
+        "最多使用次数",
+        null=True,
+        blank=True,
+        help_text="留空表示不限次数。",
+    )
+    used_count = models.PositiveIntegerField("已使用次数", default=0)
+
+    class Meta:
+        verbose_name = "邀请码"
+        verbose_name_plural = "邀请码"
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        self.code = self.code.strip().upper()
+        super().save(*args, **kwargs)
+
+    def is_usable(self):
+        if not self.is_active:
+            return False
+        if self.expires_at and self.expires_at <= timezone.now():
+            return False
+        if self.max_uses is not None and self.used_count >= self.max_uses:
+            return False
+        return True
+
+    def __str__(self):
+        return self.note or self.code
+
+
+class Notification(models.Model):
+    """站内通知；配置了邮件服务时同时发送邮件。"""
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name="接收人",
+    )
+    message = models.TextField("内容")
+    link = models.CharField("链接", max_length=200, blank=True)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+    read_at = models.DateTimeField("阅读时间", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "通知"
+        verbose_name_plural = "通知"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["recipient", "read_at"],
+                name="notification_unread_idx",
+            )
+        ]
+
+    def __str__(self):
+        return self.message[:40]
+
+
+class MatchAssignmentSummary(Match):
+    """后台「裁判安排」列表：每场比赛一行，四个岗位并排显示。"""
+
+    class Meta:
+        proxy = True
+        verbose_name = "裁判安排"
+        verbose_name_plural = "裁判安排"

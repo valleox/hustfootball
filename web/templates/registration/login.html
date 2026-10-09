@@ -1,11 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}用户登录 · 足协裁判管理系统{% endblock %}
+{% block title %}用户登录 · {{ org_name }}{% endblock %}
 
 {% block content %}
 <section class="card login-card">
   <h1>用户登录</h1>
   <p class="muted">请使用管理员分配的账号登录。</p>
+
+  {% if user.is_authenticated %}
+    <p class="notice">
+      当前账号（{{ user.get_username }}）没有访问该页面的权限，
+      请换用有权限的账号登录，或<a href="{% url 'scheduling:home' %}">返回首页</a>。
+    </p>
+  {% endif %}
 
   {{ form.non_field_errors }}
 
@@ -27,5 +34,9 @@
     <input type="hidden" name="next" value="{{ next }}">
     <button class="full-width" type="submit">登录</button>
   </form>
+
+  <p class="muted">
+    还没有账号？<a href="{% url 'signup' %}">使用邀请码注册</a>
+  </p>
 </section>
 {% endblock %}

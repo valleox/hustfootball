@@ -1,0 +1,96 @@
+# 项目自带的简体中文翻译，补充第三方应用（django-axes）缺少的中文。
+# 修改后运行：python manage.py compile_translations
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: zh_Hans\n"
+
+msgid "access attempt"
+msgstr "登录失败记录"
+
+msgid "access attempts"
+msgstr "登录失败记录"
+
+msgid "access failure"
+msgstr "登录失败日志"
+
+msgid "access failures"
+msgstr "登录失败日志"
+
+msgid "access log"
+msgstr "登录日志"
+
+msgid "access logs"
+msgstr "登录日志"
+
+msgid "access attempt expiration"
+msgstr "登录失败记录有效期"
+
+msgid "access attempt expirations"
+msgstr "登录失败记录有效期"
+
+msgid "Access Attempt"
+msgstr "登录失败记录"
+
+msgid "Access lock out"
+msgstr "登录锁定"
+
+msgid "Account locked: too many login attempts. Please try again later."
+msgstr "账号已锁定：登录失败次数过多，请稍后再试。"
+
+msgid "Attempt Remaining"
+msgstr "剩余尝试次数"
+
+msgid "Attempt Time"
+msgstr "尝试时间"
+
+msgid "Clean up expired attempts"
+msgstr "清理过期记录"
+
+msgid "Expires At"
+msgstr "过期时间"
+
+msgid "Failed Logins"
+msgstr "失败次数"
+
+msgid "Form Data"
+msgstr "表单数据"
+
+msgid "GET Data"
+msgstr "GET 数据"
+
+msgid "HTTP Accept"
+msgstr "HTTP Accept 请求头"
+
+msgid "IP Address"
+msgstr "IP 地址"
+
+msgid "Locked Out"
+msgstr "已锁定"
+
+msgid "Logout Time"
+msgstr "退出时间"
+
+msgid "Meta Data"
+msgstr "请求元数据"
+
+msgid "Not set"
+msgstr "未设置"
+
+msgid "POST Data"
+msgstr "POST 数据"
+
+msgid "Path"
+msgstr "路径"
+
+msgid "Session key hash (sha256)"
+msgstr "会话密钥哈希（SHA-256）"
+
+msgid "The time when access attempt expires and is no longer valid."
+msgstr "该记录过期失效的时间。"
+
+msgid "User Agent"
+msgstr "浏览器标识"
+
+msgid "Username"
+msgstr "用户名"

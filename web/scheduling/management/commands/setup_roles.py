@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
-    help = "创建足协系统用户组并配置权限"
+    help = "创建系统用户组并配置权限"
 
     def get_permissions(self, permission_codes):
         permissions = Permission.objects.filter(

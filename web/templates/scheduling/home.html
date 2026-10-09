@@ -1,10 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}系统首页 · 足协裁判管理系统{% endblock %}
+{% block title %}系统首页 · {{ org_name }}{% endblock %}
 
 {% block content %}
 <section class="card">
   <h1>欢迎，{{ user.get_username }}</h1>
+
+  {% if unread_notifications %}
+    <div class="notice">
+      <h2>新通知</h2>
+      <ul>
+        {% for notification in unread_notifications %}
+          <li>
+            {{ notification.message }}
+            {% if notification.link %}
+              <a href="{{ notification.link }}">查看</a>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <a href="{% url 'scheduling:notification_list' %}">查看全部通知并标为已读</a>
+    </div>
+  {% endif %}
 
   <h2>当前角色</h2>
   <ul>
@@ -135,6 +152,13 @@
         <a class="button-link"
            href="{% url 'scheduling:match_create' %}">
           录入新比赛
+        </a>
+      {% endif %}
+
+      {% if perms.scheduling.view_refereeprofile %}
+        <a class="button-link"
+           href="{% url 'scheduling:referee_workload' %}">
+          裁判工作量
         </a>
       {% endif %}
     </div>

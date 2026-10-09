@@ -13,6 +13,11 @@ urlpatterns = [
         name="assignment_export",
     ),
     path(
+        "matches/publish/",
+        views.assignment_bulk_publish,
+        name="assignment_bulk_publish",
+    ),
+    path(
         "matches/new/",
         views.match_create,
         name="match_create",
@@ -36,6 +41,16 @@ urlpatterns = [
         "matches/<int:pk>/assignments/publish/",
         views.assignment_publish,
         name="assignment_publish",
+    ),
+    path(
+        "notifications/",
+        views.notification_list,
+        name="notification_list",
+    ),
+    path(
+        "referees/workload/",
+        views.referee_workload,
+        name="referee_workload",
     ),
     path(
         "assignments/<int:pk>/respond/",

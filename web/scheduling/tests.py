@@ -4,16 +4,25 @@ from io import BytesIO, StringIO
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management import call_command
-from django.test import TestCase
+from unittest import mock
+
+from django.core import mail
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.admin.sites import AdminSite
+from django.contrib.messages.storage.fallback import FallbackStorage
+from django.contrib import admin as django_admin
+from django.test import RequestFactory
+from types import SimpleNamespace
 from openpyxl import load_workbook
 
-from .admin import RefereeProfileAdmin
+from .admin import MatchAdmin, RefereeProfileAdmin
 from .models import (
     Assignment,
     Competition,
+    InviteCode,
+    Notification,
     Match,
     RefereeProfile,
     Team,
@@ -852,6 +861,409 @@ class AssignmentPageTests(TestCase):
 
         self.assertNotContains(response, "待处理请假")
 
+    def unpublish(self):
+        self.match.assignment_status = Match.AssignmentStatus.DRAFT
+        self.match.published_at = None
+        self.match.save()
+
+    def publish(self):
+        self.client.force_login(self.scheduler)
+        return self.client.post(
+            reverse(
+                "scheduling:assignment_publish",
+                args=[self.match.pk],
+            ),
+            follow=True,
+        )
+
+    def set_referee_emails(self):
+        for index, referee in enumerate(self.referees, start=1):
+            referee.user.email = f"referee{index}@example.test"
+            referee.user.save()
+
+    def test_publishing_notifies_assigned_referees_in_site(self):
+        self.unpublish()
+
+        response = self.publish()
+
+        self.assertContains(response, "已通知 4 名裁判")
+        for referee in self.referees[:4]:
+            notification = Notification.objects.get(
+                recipient=referee.user
+            )
+            self.assertIn("排班测试主队 vs 排班测试客队", notification.message)
+            self.assertEqual(
+                notification.link,
+                reverse(
+                    "scheduling:match_detail",
+                    args=[self.match.pk],
+                ),
+            )
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=self.referees[4].user
+            ).exists()
+        )
+        self.assertIn(
+            "第四官员",
+            Notification.objects.get(
+                recipient=self.referees[3].user
+            ).message,
+        )
+
+    def test_publishing_sends_email_when_enabled(self):
+        self.unpublish()
+        self.set_referee_emails()
+
+        with override_settings(EMAIL_NOTIFICATIONS_ENABLED=True):
+            self.publish()
+
+        self.assertEqual(len(mail.outbox), 4)
+        recipients = sorted(
+            message.to[0] for message in mail.outbox
+        )
+        self.assertEqual(
+            recipients,
+            [f"referee{i}@example.test" for i in range(1, 5)],
+        )
+        self.assertIn("新的裁判安排", mail.outbox[0].subject)
+        self.assertIn(
+            f"http://testserver/matches/{self.match.pk}/",
+            mail.outbox[0].body,
+        )
+
+    def test_no_email_when_disabled(self):
+        self.unpublish()
+        self.set_referee_emails()
+
+        self.publish()
+
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(Notification.objects.count(), 4)
+
+    def test_email_failure_does_not_block_publishing(self):
+        self.unpublish()
+        self.set_referee_emails()
+
+        with override_settings(EMAIL_NOTIFICATIONS_ENABLED=True):
+            with mock.patch(
+                "scheduling.notifications.get_connection",
+                side_effect=OSError("SMTP down"),
+            ):
+                with self.assertLogs(
+                    "scheduling.notifications",
+                    level="ERROR",
+                ):
+                    response = self.publish()
+
+        self.assertContains(response, "裁判安排已经发布")
+        self.match.refresh_from_db()
+        self.assertEqual(
+            self.match.assignment_status,
+            Match.AssignmentStatus.PUBLISHED,
+        )
+        self.assertEqual(Notification.objects.count(), 4)
+
+    def request_leave(self, assignment, note="临时有课"):
+        assignment.referee.user.groups.add(
+            Group.objects.get(name="裁判员")
+        )
+        self.client.force_login(assignment.referee.user)
+        return self.client.post(
+            reverse(
+                "scheduling:assignment_respond",
+                args=[assignment.pk],
+            ),
+            {
+                "response_status": Assignment.ResponseStatus.LEAVE,
+                "response_note": note,
+            },
+            follow=True,
+        )
+
+    def test_leave_request_notifies_schedulers_once(self):
+        assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        self.scheduler.email = "scheduler@example.test"
+        self.scheduler.save()
+
+        with override_settings(EMAIL_NOTIFICATIONS_ENABLED=True):
+            response = self.request_leave(assignment)
+            self.request_leave(assignment, note="补充说明")
+
+        self.assertContains(response, "已通知排班管理员")
+        notifications = Notification.objects.filter(
+            recipient=self.scheduler
+        )
+        self.assertEqual(notifications.count(), 1)
+        self.assertIn("测试裁判1 申请请假", notifications[0].message)
+        self.assertIn("临时有课", notifications[0].message)
+        self.assertFalse(
+            Notification.objects.filter(recipient=self.recorder).exists()
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["scheduler@example.test"])
+
+    def test_notification_page_marks_items_read(self):
+        user = self.referees[0].user
+        Notification.objects.create(recipient=user, message="第一条通知")
+        Notification.objects.create(recipient=user, message="第二条通知")
+        self.client.force_login(user)
+
+        home = self.client.get(reverse("scheduling:home"))
+        self.assertContains(home, '<span class="badge">2</span>', html=True)
+
+        page = self.client.get(reverse("scheduling:notification_list"))
+        self.assertContains(page, "第一条通知")
+        self.assertContains(page, "第二条通知")
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=user,
+                read_at__isnull=True,
+            ).exists()
+        )
+
+        home = self.client.get(reverse("scheduling:home"))
+        self.assertNotContains(home, 'class="badge"')
+
+    def test_users_only_see_their_own_notifications(self):
+        Notification.objects.create(
+            recipient=self.referees[1].user,
+            message="别人的通知",
+        )
+        self.client.force_login(self.referees[0].user)
+
+        page = self.client.get(reverse("scheduling:notification_list"))
+
+        self.assertNotContains(page, "别人的通知")
+        self.assertIsNone(
+            Notification.objects.get(message="别人的通知").read_at
+        )
+
+    def make_draft_match(self, hours, positions=4, **changes):
+        data = {
+            "competition": self.competition,
+            "round_name": "第二轮",
+            "match_number": f"B-{hours}",
+            "kickoff_at": self.match.kickoff_at + timedelta(hours=hours),
+            "home_team": Team.objects.create(name=f"批量主队{hours}"),
+            "away_team": Team.objects.create(name=f"批量客队{hours}"),
+            "venue": self.venue,
+        }
+        data.update(changes)
+        match = Match.objects.create(**data)
+        for index, position in enumerate(
+            list(Assignment.Position)[:positions]
+        ):
+            Assignment.objects.create(
+                match=match,
+                referee=self.referees[index],
+                position=position,
+            )
+        return match
+
+    def test_bulk_publish_publishes_ready_matches_and_reports_others(self):
+        ready = self.make_draft_match(5)
+        incomplete = self.make_draft_match(10, positions=2)
+        self.client.force_login(self.scheduler)
+
+        response = self.client.post(
+            reverse("scheduling:assignment_bulk_publish"),
+            {"match_ids": [ready.pk, incomplete.pk]},
+            follow=True,
+        )
+
+        self.assertContains(
+            response,
+            "已发布 1 场比赛的裁判安排，已通知 4 名裁判。",
+        )
+        self.assertContains(response, "批量主队10 vs 批量客队10")
+        self.assertContains(response, "以下岗位尚未安排")
+        ready.refresh_from_db()
+        incomplete.refresh_from_db()
+        self.assertEqual(
+            ready.assignment_status,
+            Match.AssignmentStatus.PUBLISHED,
+        )
+        self.assertEqual(
+            incomplete.assignment_status,
+            Match.AssignmentStatus.DRAFT,
+        )
+        self.assertEqual(
+            Notification.objects.filter(
+                link=reverse("scheduling:match_detail", args=[ready.pk])
+            ).count(),
+            4,
+        )
+
+    def test_bulk_publish_requires_permission(self):
+        ready = self.make_draft_match(5)
+        self.client.force_login(self.recorder)
+
+        response = self.client.post(
+            reverse("scheduling:assignment_bulk_publish"),
+            {"match_ids": [ready.pk]},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        ready.refresh_from_db()
+        self.assertEqual(
+            ready.assignment_status,
+            Match.AssignmentStatus.DRAFT,
+        )
+
+    def test_match_list_offers_checkboxes_for_draft_matches(self):
+        ready = self.make_draft_match(5)
+        self.client.force_login(self.scheduler)
+
+        response = self.client.get(reverse("scheduling:match_list"))
+
+        self.assertContains(response, "全选可发布")
+        self.assertContains(response, f'value="{ready.pk}"')
+        self.assertContains(response, 'data-publishable="1"')
+        self.assertNotContains(response, f'value="{self.match.pk}"')
+        self.assertContains(response, "已安排 4/4 个岗位")
+
+    def test_match_list_hides_bulk_publish_from_recorder(self):
+        self.make_draft_match(5)
+        self.client.force_login(self.recorder)
+
+        response = self.client.get(reverse("scheduling:match_list"))
+
+        self.assertNotContains(response, "发布所选")
+
+    def admin_request(self):
+        request = RequestFactory().post("/admin/")
+        request.user = self.scheduler
+        request.session = {}
+        request._messages = FallbackStorage(request)
+        return request
+
+    def admin_publish(self, match):
+        request = self.admin_request()
+        match_admin = MatchAdmin(Match, django_admin.site)
+        match.assignment_status = Match.AssignmentStatus.PUBLISHED
+        match_admin.save_model(request, match, None, True)
+        match_admin.save_related(
+            request,
+            SimpleNamespace(instance=match, save_m2m=lambda: None),
+            [],
+            True,
+        )
+        return [str(message) for message in request._messages]
+
+    def test_admin_publishing_notifies_referees(self):
+        ready = self.make_draft_match(5)
+
+        messages_sent = self.admin_publish(ready)
+
+        ready.refresh_from_db()
+        self.assertEqual(
+            ready.assignment_status,
+            Match.AssignmentStatus.PUBLISHED,
+        )
+        self.assertIsNotNone(ready.published_at)
+        self.assertIn("已通知 4 名裁判", messages_sent[0])
+        self.assertEqual(Notification.objects.count(), 4)
+
+    def test_admin_publishing_incomplete_match_stays_draft(self):
+        incomplete = self.make_draft_match(5, positions=3)
+
+        messages_sent = self.admin_publish(incomplete)
+
+        incomplete.refresh_from_db()
+        self.assertEqual(
+            incomplete.assignment_status,
+            Match.AssignmentStatus.DRAFT,
+        )
+        self.assertIn("未发布", messages_sent[0])
+        self.assertEqual(Notification.objects.count(), 0)
+
+    def test_admin_bulk_action_publishes_selected(self):
+        ready = self.make_draft_match(5)
+        admin_user = get_user_model().objects.create_superuser(
+            "action_admin",
+            "action@example.test",
+            "x-password-123",
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.post(
+            reverse("admin:scheduling_match_changelist"),
+            {
+                "action": "publish_selected",
+                "_selected_action": [ready.pk],
+            },
+            follow=True,
+        )
+
+        self.assertContains(response, "已发布 1 场比赛的裁判安排")
+        ready.refresh_from_db()
+        self.assertEqual(
+            ready.assignment_status,
+            Match.AssignmentStatus.PUBLISHED,
+        )
+
+    def test_admin_match_autocomplete_lists_only_upcoming_scheduled(self):
+        upcoming = self.make_draft_match(5, positions=0)
+        finished = self.make_draft_match(
+            6,
+            positions=0,
+            status=Match.Status.FINISHED,
+        )
+        past = self.make_draft_match(
+            7,
+            positions=0,
+            kickoff_at=timezone.now() - timedelta(days=2),
+        )
+        admin_user = get_user_model().objects.create_superuser(
+            "autocomplete_admin",
+            "auto@example.test",
+            "x-password-123",
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(
+            reverse("admin:autocomplete"),
+            {
+                "app_label": "scheduling",
+                "model_name": "assignment",
+                "field_name": "match",
+                "term": "",
+            },
+        )
+
+        results = response.json()["results"]
+        ids = {int(item["id"]) for item in results}
+        self.assertIn(upcoming.pk, ids)
+        self.assertNotIn(finished.pk, ids)
+        self.assertNotIn(past.pk, ids)
+        label = next(
+            item["text"]
+            for item in results
+            if int(item["id"]) == upcoming.pk
+        )
+        self.assertIn("排班测试联赛", label)
+        self.assertIn("第二轮", label)
+        self.assertIn("场次 B-5", label)
+        self.assertIn("批量主队5 vs 批量客队5", label)
+
+    def test_home_lists_unread_notifications(self):
+        user = self.referees[0].user
+        Notification.objects.create(
+            recipient=user,
+            message="你被安排为主裁判",
+            link="/matches/1/",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("scheduling:home"))
+
+        self.assertContains(response, "新通知")
+        self.assertContains(response, "你被安排为主裁判")
+
     def test_draft_assignment_is_hidden_on_match_detail(self):
         referee_user = self.referees[0].user
         referee_user.groups.add(
@@ -962,7 +1374,7 @@ class AssignmentPageTests(TestCase):
 
             self.assertEqual(
                 worksheet["A1"].value,
-                "足协裁判安排表",
+                "华中科技大学足球协会裁判安排表",
             )
 
             headers = [
@@ -1173,7 +1585,7 @@ class DeploymentSmokeTests(TestCase):
             "test-password",
         )
         login_response = self.client.post(
-            reverse("admin:login"),
+            reverse("login"),
             {
                 "username": "smoke-admin",
                 "password": "test-password",
@@ -1354,3 +1766,560 @@ class PasswordChangeTests(TestCase):
             response,
             "scheduling/password_change_form.html",
         )
+
+
+class RefereeSignupTests(TestCase):
+    def setUp(self):
+        call_command("setup_roles", stdout=StringIO())
+        self.invite = InviteCode.objects.create(
+            code="TESTCODE23",
+            max_uses=2,
+        )
+
+    def signup_data(self, **changes):
+        data = {
+            "invite_code": "testcode23",
+            "username": "new_referee",
+            "name": "新裁判",
+            "email": "new.referee@example.test",
+            "phone": "13800000000",
+            "level": RefereeProfile.Level.LEVEL_2,
+            "password1": "Whistle-Blower-2026",
+            "password2": "Whistle-Blower-2026",
+        }
+        data.update(changes)
+        return data
+
+    def test_login_page_links_to_signup(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, reverse("signup"))
+
+    def test_valid_invite_creates_referee_and_logs_in(self):
+        response = self.client.post(
+            reverse("signup"),
+            self.signup_data(),
+        )
+
+        self.assertRedirects(response, reverse("scheduling:home"))
+        user = get_user_model().objects.get(username="new_referee")
+        self.assertEqual(user.email, "new.referee@example.test")
+        self.assertEqual(user.referee_profile.name, "新裁判")
+        self.assertEqual(
+            user.referee_profile.level,
+            RefereeProfile.Level.LEVEL_2,
+        )
+        self.assertTrue(user.groups.filter(name="裁判员").exists())
+        self.assertFalse(user.is_staff)
+        self.assertEqual(
+            int(self.client.session["_auth_user_id"]),
+            user.pk,
+        )
+        self.invite.refresh_from_db()
+        self.assertEqual(self.invite.used_count, 1)
+
+    def test_invalid_invite_is_rejected(self):
+        response = self.client.post(
+            reverse("signup"),
+            self.signup_data(invite_code="WRONGCODE9"),
+        )
+
+        self.assertContains(response, "邀请码无效或已过期。")
+        self.assertFalse(
+            get_user_model().objects.filter(
+                username="new_referee"
+            ).exists()
+        )
+
+    def test_inactive_expired_or_used_up_invite_is_rejected(self):
+        cases = {
+            "inactive": {"is_active": False},
+            "expired": {
+                "expires_at": timezone.now() - timedelta(minutes=1)
+            },
+            "used_up": {"used_count": 2},
+        }
+
+        for name, changes in cases.items():
+            with self.subTest(name):
+                values = {
+                    "is_active": True,
+                    "expires_at": None,
+                    "used_count": 0,
+                }
+                values.update(changes)
+                InviteCode.objects.filter(pk=self.invite.pk).update(
+                    **values
+                )
+
+                response = self.client.post(
+                    reverse("signup"),
+                    self.signup_data(),
+                )
+
+                self.assertContains(response, "邀请码无效或已过期。")
+
+        self.assertFalse(
+            get_user_model().objects.filter(
+                username="new_referee"
+            ).exists()
+        )
+
+    def test_duplicate_email_is_rejected(self):
+        get_user_model().objects.create_user(
+            username="existing",
+            email="New.Referee@example.test",
+            password="x-password-123",
+        )
+
+        response = self.client.post(
+            reverse("signup"),
+            self.signup_data(),
+        )
+
+        self.assertContains(response, "该邮箱已经注册过。")
+
+    def test_logged_in_user_is_redirected_home(self):
+        user = get_user_model().objects.create_user(
+            username="already_in",
+            password="x-password-123",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("signup"))
+
+        self.assertRedirects(response, reverse("scheduling:home"))
+
+    def test_generated_codes_are_unique_and_readable(self):
+        codes = {InviteCode.objects.create().code for _ in range(20)}
+
+        self.assertEqual(len(codes), 20)
+        for code in codes:
+            self.assertEqual(len(code), 10)
+            self.assertFalse(set(code) & set("01OIL"))
+
+
+class RefereeWorkloadTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("setup_roles", stdout=StringIO())
+        user_model = get_user_model()
+
+        cls.scheduler = user_model.objects.create_user(
+            username="workload_scheduler",
+            password="x-password-123",
+        )
+        cls.scheduler.groups.add(Group.objects.get(name="排班管理员"))
+        cls.recorder = user_model.objects.create_user(
+            username="workload_recorder",
+            password="x-password-123",
+        )
+        cls.recorder.groups.add(Group.objects.get(name="场次录入员"))
+
+        cls.league = Competition.objects.create(name="联赛", season="2026")
+        cls.cup = Competition.objects.create(name="杯赛", season="2026")
+        cls.venue = Venue.objects.create(name="工作量场地")
+
+        def make_match(competition, days, status=Match.Status.SCHEDULED):
+            index = Match.objects.count()
+            return Match.objects.create(
+                competition=competition,
+                kickoff_at=timezone.now() + timedelta(days=days),
+                home_team=Team.objects.create(name=f"主{index}"),
+                away_team=Team.objects.create(name=f"客{index}"),
+                venue=cls.venue,
+                status=status,
+            )
+
+        cls.busy = RefereeProfile.objects.create(
+            user=user_model.objects.create_user(username="busy"),
+            name="忙碌裁判",
+        )
+        cls.idle = RefereeProfile.objects.create(
+            user=user_model.objects.create_user(username="idle"),
+            name="空闲裁判",
+        )
+
+        cls.past_league = make_match(cls.league, -7)
+        cls.next_league = make_match(cls.league, 3)
+        cls.cup_match = make_match(cls.cup, 5)
+        cls.cancelled = make_match(
+            cls.league,
+            10,
+            status=Match.Status.CANCELLED,
+        )
+
+        Assignment.objects.create(
+            match=cls.past_league,
+            referee=cls.busy,
+            position=Assignment.Position.REFEREE,
+            response_status=Assignment.ResponseStatus.CONFIRMED,
+        )
+        Assignment.objects.create(
+            match=cls.next_league,
+            referee=cls.busy,
+            position=Assignment.Position.ASSISTANT_1,
+            response_status=Assignment.ResponseStatus.LEAVE,
+        )
+        Assignment.objects.create(
+            match=cls.cup_match,
+            referee=cls.busy,
+            position=Assignment.Position.FOURTH_OFFICIAL,
+        )
+        Assignment.objects.create(
+            match=cls.cancelled,
+            referee=cls.busy,
+            position=Assignment.Position.REFEREE,
+        )
+
+    def get_rows(self, **params):
+        self.client.force_login(self.scheduler)
+        response = self.client.get(
+            reverse("scheduling:referee_workload"),
+            params,
+        )
+        self.assertEqual(response.status_code, 200)
+        return {
+            referee.name: referee
+            for referee in response.context["referees"]
+        }
+
+    def test_counts_exclude_cancelled_matches(self):
+        busy = self.get_rows()["忙碌裁判"]
+
+        self.assertEqual(busy.total, 3)
+        self.assertEqual(busy.as_referee, 1)
+        self.assertEqual(busy.as_assistant, 1)
+        self.assertEqual(busy.as_fourth, 1)
+        self.assertEqual(busy.confirmed, 1)
+        self.assertEqual(busy.on_leave, 1)
+        self.assertEqual(busy.upcoming, 2)
+        self.assertEqual(
+            busy.last_match_at,
+            self.past_league.kickoff_at,
+        )
+
+    def test_filter_by_competition(self):
+        rows = self.get_rows(competition=self.cup.pk)
+
+        self.assertEqual(rows["忙碌裁判"].total, 1)
+        self.assertEqual(rows["空闲裁判"].total, 0)
+
+    def test_busiest_referee_is_listed_first(self):
+        names = list(self.get_rows())
+
+        self.assertEqual(names[0], "忙碌裁判")
+
+    def test_recorder_cannot_view_workload(self):
+        self.client.force_login(self.recorder)
+
+        response = self.client.get(
+            reverse("scheduling:referee_workload")
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_assignment_form_shows_competition_counts(self):
+        self.client.force_login(self.scheduler)
+        new_match = Match.objects.create(
+            competition=self.league,
+            kickoff_at=timezone.now() + timedelta(days=20),
+            home_team=Team.objects.create(name="新主队"),
+            away_team=Team.objects.create(name="新客队"),
+            venue=self.venue,
+        )
+
+        response = self.client.get(
+            reverse(
+                "scheduling:assignment_update",
+                args=[new_match.pk],
+            )
+        )
+
+        self.assertContains(response, "忙碌裁判（本赛事已排 2 场）")
+        self.assertContains(response, "空闲裁判（本赛事已排 0 场）")
+
+
+class AdminLoginRedirectTests(TestCase):
+    def test_admin_login_uses_site_login_page(self):
+        response = self.client.get("/admin/", follow=True)
+
+        self.assertEqual(
+            response.redirect_chain[-1][0],
+            "/accounts/login/?next=%2Fadmin%2F",
+        )
+        self.assertTemplateUsed(response, "registration/login.html")
+        self.assertContains(response, "用户登录")
+
+    def test_non_staff_user_sees_permission_notice(self):
+        user = get_user_model().objects.create_user(
+            username="plain_user",
+            password="x-password-123",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get("/admin/", follow=True)
+
+        self.assertContains(response, "没有访问该页面的权限")
+
+    def test_admin_pages_use_site_colors(self):
+        admin_user = get_user_model().objects.create_superuser(
+            "theme_admin",
+            "theme@example.test",
+            "x-password-123",
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(reverse("admin:index"))
+
+        self.assertContains(response, "--header-bg: #145540")
+        self.assertContains(response, "华中科技大学足球协会 · 管理后台")
+
+
+class SiteNavigationTests(TestCase):
+    def setUp(self):
+        call_command("setup_roles", stdout=StringIO())
+        self.user = get_user_model().objects.create_user(
+            username="nav_user",
+            password="x-password-123",
+        )
+        self.user.groups.add(Group.objects.get(name="裁判员"))
+        self.client.force_login(self.user)
+
+    def test_header_shows_site_name_and_home_link(self):
+        response = self.client.get(reverse("scheduling:notification_list"))
+
+        self.assertContains(response, "华中科技大学足球协会")
+        self.assertContains(response, "<title>通知 · 华中科技大学足球协会</title>", html=True)
+        self.assertContains(response, ">首页</a>")
+        self.assertNotContains(response, "足协裁判管理系统")
+
+    def test_login_page_title_uses_site_name(self):
+        self.client.logout()
+
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(
+            response,
+            "<title>用户登录 · 华中科技大学足球协会</title>",
+            html=True,
+        )
+        self.assertContains(response, "华中科技大学足球协会")
+        self.assertNotContains(response, "testserver")
+
+    def test_match_list_links_back_home(self):
+        response = self.client.get(reverse("scheduling:match_list"))
+
+        self.assertContains(response, "返回首页")
+
+
+class AdminChineseTests(TestCase):
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_superuser(
+            "zh_admin",
+            "zh@example.test",
+            "x-password-123",
+        )
+        self.client.force_login(self.admin_user)
+
+    def test_app_and_axes_names_are_chinese(self):
+        response = self.client.get(reverse("admin:index"))
+
+        for text in ("裁判排班", "登录安全", "登录失败记录", "登录日志"):
+            self.assertContains(response, text)
+        for text in ("Scheduling", "Axes", "Access attempts"):
+            self.assertNotContains(response, text)
+
+    def test_axes_attempt_list_is_chinese(self):
+        from axes.models import AccessAttempt
+
+        AccessAttempt.objects.create(
+            username="someone",
+            ip_address="10.0.0.1",
+            user_agent="test",
+            failures_since_start=5,
+        )
+
+        response = self.client.get(
+            reverse("admin:axes_accessattempt_changelist")
+        )
+
+        self.assertContains(response, "状态")
+        self.assertContains(response, "已锁定")
+        self.assertContains(response, "IP 地址")
+        self.assertNotContains(response, ">Status<")
+
+    def test_compiled_translations_match_source(self):
+        from pathlib import Path
+
+        from scheduling.management.commands.compile_translations import (
+            parse_po,
+        )
+
+        locale_dir = Path(__file__).resolve().parent.parent / "locale"
+        po = locale_dir / "zh_Hans" / "LC_MESSAGES" / "django.po"
+        mo = locale_dir / "zh_Hans" / "LC_MESSAGES" / "django.mo"
+
+        import gettext
+
+        with mo.open("rb") as handle:
+            catalog = gettext.GNUTranslations(handle)
+        for msgid, msgstr in parse_po(po).items():
+            if msgid:
+                self.assertEqual(
+                    catalog.gettext(msgid),
+                    msgstr,
+                    "django.mo 已过期，请运行 compile_translations",
+                )
+
+
+class AssignmentSummaryAdminTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.admin_user = user_model.objects.create_superuser(
+            "summary_admin",
+            "summary@example.test",
+            "x-password-123",
+        )
+        competition = Competition.objects.create(name="院系杯", season="2026")
+        venue = Venue.objects.create(name="东操场")
+        cls.match = Match.objects.create(
+            competition=competition,
+            round_name="小组赛第1轮",
+            kickoff_at=timezone.now() + timedelta(days=2),
+            home_team=Team.objects.create(name="管理学院"),
+            away_team=Team.objects.create(name="计算机学院"),
+            venue=venue,
+        )
+        names = ["张主裁", "李一助", "王二助", "赵四官"]
+        statuses = [
+            Assignment.ResponseStatus.CONFIRMED,
+            Assignment.ResponseStatus.PENDING,
+            Assignment.ResponseStatus.LEAVE,
+            Assignment.ResponseStatus.PENDING,
+        ]
+        cls.assignments = []
+        for index, position in enumerate(Assignment.Position):
+            referee = RefereeProfile.objects.create(
+                user=user_model.objects.create_user(f"summary_ref_{index}"),
+                name=names[index],
+            )
+            cls.assignments.append(
+                Assignment.objects.create(
+                    match=cls.match,
+                    referee=referee,
+                    position=position,
+                    response_status=statuses[index],
+                    responded_at=(
+                        None
+                        if statuses[index] == Assignment.ResponseStatus.PENDING
+                        else timezone.now()
+                    ),
+                )
+            )
+
+    def setUp(self):
+        self.client.force_login(self.admin_user)
+
+    def test_summary_lists_one_row_per_match_with_all_positions(self):
+        response = self.client.get(
+            reverse("admin:scheduling_matchassignmentsummary_changelist")
+        )
+
+        self.assertContains(response, 'class="action-select"', count=1)
+        self.assertContains(response, "<h1>裁判安排</h1>", html=True)
+        self.assertContains(response, "管理学院 vs 计算机学院")
+        for name in ("张主裁", "李一助", "王二助", "赵四官"):
+            self.assertContains(response, name)
+        for header in ("主裁判", "第一助理裁判", "第二助理裁判", "第四官员"):
+            self.assertContains(response, header)
+        self.assertContains(response, "申请请假")
+        self.assertNotContains(response, "回应时间")
+        self.assertContains(
+            response,
+            reverse(
+                "admin:scheduling_assignment_change",
+                args=[self.assignments[0].pk],
+            ),
+        )
+        self.assertContains(response, "publish_selected")
+
+    def test_summary_handles_matches_with_unassigned_positions(self):
+        Match.objects.create(
+            competition=self.match.competition,
+            kickoff_at=timezone.now() + timedelta(days=3),
+            home_team=Team.objects.create(name="法学院"),
+            away_team=Team.objects.create(name="医学院"),
+            venue=self.match.venue,
+        )
+
+        response = self.client.get(
+            reverse("admin:scheduling_matchassignmentsummary_changelist")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "法学院 vs 医学院")
+        self.assertContains(response, "未安排", count=4)
+
+    def test_assignment_detail_shows_response_time(self):
+        response = self.client.get(
+            reverse(
+                "admin:scheduling_assignment_change",
+                args=[self.assignments[0].pk],
+            )
+        )
+
+        self.assertContains(response, "回应时间")
+
+    def test_menu_shows_summary_not_detail_list(self):
+        response = self.client.get(reverse("admin:index"))
+
+        self.assertContains(
+            response,
+            reverse("admin:scheduling_matchassignmentsummary_changelist"),
+        )
+        self.assertNotContains(
+            response,
+            reverse("admin:scheduling_assignment_changelist"),
+        )
+
+    def test_match_inline_hides_response_time(self):
+        response = self.client.get(
+            reverse("admin:scheduling_match_change", args=[self.match.pk])
+        )
+
+        self.assertNotContains(response, "回应时间")
+
+    def test_match_changelist_shows_publish_action_top_and_bottom(self):
+        response = self.client.get(
+            reverse("admin:scheduling_match_changelist")
+        )
+
+        self.assertContains(
+            response,
+            '<option value="publish_selected">发布所选比赛的裁判安排</option>',
+            count=2,
+            html=True,
+        )
+
+    def test_changing_response_in_admin_updates_response_time(self):
+        assignment = self.assignments[0]
+        old_time = timezone.now() - timedelta(days=3)
+        Assignment.objects.filter(pk=assignment.pk).update(responded_at=old_time)
+        assignment.refresh_from_db()
+
+        request = RequestFactory().post("/admin/")
+        request.user = self.admin_user
+        from .admin import AssignmentAdmin
+
+        assignment.response_status = Assignment.ResponseStatus.LEAVE
+        AssignmentAdmin(Assignment, django_admin.site).save_model(
+            request,
+            assignment,
+            SimpleNamespace(changed_data=["response_status"]),
+            True,
+        )
+
+        assignment.refresh_from_db()
+        self.assertGreater(assignment.responded_at, old_time)

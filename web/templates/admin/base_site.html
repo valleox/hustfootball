@@ -1,0 +1,32 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title }}{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  /* 与网站前台一致的绿色配色 */
+  :root {
+    --primary: #146c52;
+    --secondary: #145540;
+    --header-bg: #145540;
+    --header-color: #e6f2eb;
+    --header-link-color: #ffffff;
+    --breadcrumbs-bg: #146c52;
+    --link-fg: #146c52;
+    --link-hover-color: #0e4a38;
+    --link-selected-fg: #145540;
+    --button-bg: #146c52;
+    --button-hover-bg: #145540;
+    --default-button-bg: #145540;
+    --default-button-hover-bg: #0e4a38;
+    --selected-row: #e6f2eb;
+  }
+</style>
+{% endblock %}
+
+{% block branding %}
+<div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header }}</a></div>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
