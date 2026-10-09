@@ -105,6 +105,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'zh-hans'
 
+# 项目自带的翻译（补充第三方应用缺少的简体中文）；以后增加英文切换也放在这里。
+LOCALE_PATHS = [BASE_DIR / "locale"]
+
 TIME_ZONE = 'UTC'
 
 USE_I18N = True

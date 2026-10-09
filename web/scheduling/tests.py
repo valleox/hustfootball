@@ -2098,3 +2098,63 @@ class SiteNavigationTests(TestCase):
         response = self.client.get(reverse("scheduling:match_list"))
 
         self.assertContains(response, "返回首页")
+
+
+class AdminChineseTests(TestCase):
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_superuser(
+            "zh_admin",
+            "zh@example.test",
+            "x-password-123",
+        )
+        self.client.force_login(self.admin_user)
+
+    def test_app_and_axes_names_are_chinese(self):
+        response = self.client.get(reverse("admin:index"))
+
+        for text in ("裁判排班", "登录安全", "登录失败记录", "登录日志"):
+            self.assertContains(response, text)
+        for text in ("Scheduling", "Axes", "Access attempts"):
+            self.assertNotContains(response, text)
+
+    def test_axes_attempt_list_is_chinese(self):
+        from axes.models import AccessAttempt
+
+        AccessAttempt.objects.create(
+            username="someone",
+            ip_address="10.0.0.1",
+            user_agent="test",
+            failures_since_start=5,
+        )
+
+        response = self.client.get(
+            reverse("admin:axes_accessattempt_changelist")
+        )
+
+        self.assertContains(response, "状态")
+        self.assertContains(response, "已锁定")
+        self.assertContains(response, "IP 地址")
+        self.assertNotContains(response, ">Status<")
+
+    def test_compiled_translations_match_source(self):
+        from pathlib import Path
+
+        from scheduling.management.commands.compile_translations import (
+            parse_po,
+        )
+
+        locale_dir = Path(__file__).resolve().parent.parent / "locale"
+        po = locale_dir / "zh_Hans" / "LC_MESSAGES" / "django.po"
+        mo = locale_dir / "zh_Hans" / "LC_MESSAGES" / "django.mo"
+
+        import gettext
+
+        with mo.open("rb") as handle:
+            catalog = gettext.GNUTranslations(handle)
+        for msgid, msgstr in parse_po(po).items():
+            if msgid:
+                self.assertEqual(
+                    catalog.gettext(msgid),
+                    msgstr,
+                    "django.mo 已过期，请运行 compile_translations",
+                )
