@@ -355,7 +355,7 @@ def position_column(position, label):
     def column(self, obj):
         assignment = assignments_by_position(obj).get(position)
         if assignment is None:
-            return format_html('<span style="color:#98a2b3">未安排</span>')
+            return format_html('<span style="color:#98a2b3">{}</span>', "未安排")
 
         return format_html(
             '<a href="{}">{}</a><br>'

@@ -2244,6 +2244,23 @@ class AssignmentSummaryAdminTests(TestCase):
         )
         self.assertContains(response, "publish_selected")
 
+    def test_summary_handles_matches_with_unassigned_positions(self):
+        Match.objects.create(
+            competition=self.match.competition,
+            kickoff_at=timezone.now() + timedelta(days=3),
+            home_team=Team.objects.create(name="法学院"),
+            away_team=Team.objects.create(name="医学院"),
+            venue=self.match.venue,
+        )
+
+        response = self.client.get(
+            reverse("admin:scheduling_matchassignmentsummary_changelist")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "法学院 vs 医学院")
+        self.assertContains(response, "未安排", count=4)
+
     def test_assignment_detail_shows_response_time(self):
         response = self.client.get(
             reverse(
