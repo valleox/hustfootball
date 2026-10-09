@@ -1,0 +1,28 @@
+{% load i18n admin_ui %}
+<button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
+<nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+  <input type="search" id="nav-filter"
+         placeholder="搜索功能…"
+         aria-label="{% translate 'Filter navigation items' %}">
+  {% for app in available_apps|ordered_apps %}
+    <div class="app-{{ app.app_label }} nav-group{% if app.app_url in request.path|urlencode %} current-app{% endif %}">
+      <p class="nav-group-title">{{ app.name }}</p>
+      <table class="nav-table">
+        {% for model in app.models %}
+          <tr class="{% if model.admin_url in request.path|urlencode %}current-model{% endif %}">
+            <th scope="row">
+              {% if model.admin_url %}
+                <a class="nav-row" href="{{ model.admin_url }}"{% if model.admin_url in request.path|urlencode %} aria-current="page"{% endif %}>
+                  <span class="nav-icon" aria-hidden="true">{{ model|tile_icon:app.app_label }}</span>
+                  <span>{{ model|tile_name:app.app_label }}</span>
+                </a>
+              {% else %}
+                {{ model|tile_name:app.app_label }}
+              {% endif %}
+            </th>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% endfor %}
+</nav>

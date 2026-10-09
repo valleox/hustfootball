@@ -94,3 +94,15 @@ msgstr "浏览器标识"
 
 msgid "Username"
 msgstr "用户名"
+
+msgid "Authentication and Authorization"
+msgstr "账号与角色"
+
+msgid "group"
+msgstr "角色"
+
+msgid "groups"
+msgstr "角色"
+
+msgid "The groups this user belongs to. A user will get all permissions granted to each of their groups."
+msgstr "该账号所属的角色。账号会获得所属角色的全部权限。"

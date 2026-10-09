@@ -1,0 +1,41 @@
+{% load admin_ui %}
+{% for app in app_list|ordered_apps %}
+  <section class="tile-section" aria-labelledby="app-{{ app.app_label }}">
+    <h2 id="app-{{ app.app_label }}" class="tile-section-title">{{ app.name }}</h2>
+    <div class="tile-grid">
+      {% for model in app.models %}
+        <article class="tile">
+          <div class="tile-head">
+            <span class="tile-icon" aria-hidden="true">{{ model|tile_icon:app.app_label }}</span>
+            <div>
+              <h3 class="tile-name">
+                {% if model.admin_url %}
+                  <a class="tile-stretch" href="{{ model.admin_url }}">{{ model|tile_name:app.app_label }}</a>
+                {% else %}
+                  {{ model|tile_name:app.app_label }}
+                {% endif %}
+              </h3>
+              {% with description=model|tile_description:app.app_label %}
+                {% if description %}<p class="tile-desc">{{ description }}</p>{% endif %}
+              {% endwith %}
+            </div>
+          </div>
+          <div class="tile-actions">
+            {% if model.admin_url %}
+              <a class="tile-button primary" href="{{ model.admin_url }}"
+                 aria-label="打开{{ model|tile_name:app.app_label }}">
+                {% if model.view_only %}查看{% else %}打开{% endif %}
+              </a>
+            {% endif %}
+            {% if model.add_url %}
+              <a class="tile-button" href="{{ model.add_url }}"
+                 aria-label="新增{{ model|tile_name:app.app_label }}">＋ 新增</a>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% empty %}
+  <p class="tile-empty">你没有查看或编辑任何内容的权限。</p>
+{% endfor %}

@@ -3,173 +3,178 @@
 {% block title %}系统首页 · {{ org_name }}{% endblock %}
 
 {% block content %}
-<section class="card">
+<section class="hero">
   <h1>欢迎，{{ user.get_username }}</h1>
-
-  {% if unread_notifications %}
-    <div class="notice">
-      <h2>新通知</h2>
-      <ul>
-        {% for notification in unread_notifications %}
-          <li>
-            {{ notification.message }}
-            {% if notification.link %}
-              <a href="{{ notification.link }}">查看</a>
-            {% endif %}
-          </li>
-        {% endfor %}
-      </ul>
-      <a href="{% url 'scheduling:notification_list' %}">查看全部通知并标为已读</a>
-    </div>
-  {% endif %}
-
-  <h2>当前角色</h2>
-  <ul>
+  <p>今天也辛苦了。这里是你的裁判工作台。</p>
+  <div class="chip-row" aria-label="当前角色">
     {% if user.is_superuser %}
-      <li>超级管理员</li>
+      <span class="chip">超级管理员</span>
     {% endif %}
-
     {% for group in user.groups.all %}
-      <li>{{ group.name }}</li>
+      <span class="chip">{{ group.name }}</span>
     {% empty %}
       {% if not user.is_superuser %}
-        <li>尚未分配角色，请联系管理员。</li>
+        <span class="chip">尚未分配角色，请联系管理员。</span>
       {% endif %}
     {% endfor %}
-  </ul>
+  </div>
+</section>
+
+<div class="page-grid">
+
+  {% if has_referee_profile and perms.scheduling.view_match %}
+    <section class="card">
+      <div class="card-title"><h2>我的裁判安排</h2></div>
+
+      {% if pending_assignments %}
+        <h3>待确认</h3>
+        <ul class="item-list">
+          {% for assignment in pending_assignments %}
+            <li>
+              <span class="item-title">
+                {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
+                {{ assignment.match.home_team }}
+                vs
+                {{ assignment.match.away_team }}
+              </span>
+              <span class="muted">
+                {{ assignment.get_position_display }} · {{ assignment.match.venue }}
+              </span>
+              <span class="item-links">
+                <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
+                <a href="{% url 'scheduling:assignment_respond' assignment.pk %}">提交反馈</a>
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if upcoming_assignments %}
+        <h3>其他近期安排</h3>
+        <ul class="item-list">
+          {% for assignment in upcoming_assignments %}
+            <li>
+              <span class="item-title">
+                {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
+                {{ assignment.match.home_team }}
+                vs
+                {{ assignment.match.away_team }}
+              </span>
+              <span class="muted">
+                {{ assignment.get_position_display }}
+                · <span class="status-tag {{ assignment.response_status }}">{{ assignment.get_response_status_display }}</span>
+                · {{ assignment.match.venue }}
+              </span>
+              <span class="item-links">
+                <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
+                <a href="{% url 'scheduling:assignment_respond' assignment.pk %}">修改反馈</a>
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if not pending_assignments and not upcoming_assignments %}
+        <p class="muted">目前没有已发布的近期裁判安排。</p>
+      {% endif %}
+    </section>
+  {% endif %}
 
   {% if perms.scheduling.change_assignment %}
-    <h2>待处理请假</h2>
+    <section class="card">
+      <div class="card-title"><h2>待处理请假</h2></div>
 
-    {% if leave_requests %}
-      <ul>
-        {% for assignment in leave_requests %}
+      {% if leave_requests %}
+        <ul class="item-list">
+          {% for assignment in leave_requests %}
+            <li>
+              <span class="item-title">
+                {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
+                {{ assignment.match.home_team }}
+                vs
+                {{ assignment.match.away_team }}
+              </span>
+              <span class="muted">
+                {{ assignment.get_position_display }}
+                · {{ assignment.referee }}
+                · {{ assignment.match.venue }}
+              </span>
+              {% if assignment.response_note %}
+                <span class="muted">请假说明：{{ assignment.response_note|linebreaksbr }}</span>
+              {% endif %}
+              <span class="item-links">
+                <a href="{% url 'scheduling:assignment_update' assignment.match.pk %}">更换裁判</a>
+                <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">目前没有待处理的请假。</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if perms.scheduling.view_match %}
+    <section class="card">
+      <div class="card-title"><h2>比赛管理</h2></div>
+      <p class="muted">查看比赛时间、参赛球队、场地和裁判安排。</p>
+
+      <div class="form-actions">
+        <a class="button-link"
+           href="{% url 'scheduling:match_list' %}">
+          查看比赛列表
+        </a>
+
+        {% if perms.scheduling.add_match %}
+          <a class="button-link secondary"
+             href="{% url 'scheduling:match_create' %}">
+            录入新比赛
+          </a>
+        {% endif %}
+
+        {% if perms.scheduling.view_refereeprofile %}
+          <a class="button-link secondary"
+             href="{% url 'scheduling:referee_workload' %}">
+            裁判工作量
+          </a>
+        {% endif %}
+      </div>
+
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="card-title">
+      <h2>新通知</h2>
+      <a href="{% url 'scheduling:notification_list' %}">
+        {% if unread_notifications %}查看全部通知并标为已读{% else %}查看历史通知{% endif %}
+      </a>
+    </div>
+    {% if unread_notifications %}
+      <ul class="item-list">
+        {% for notification in unread_notifications %}
           <li>
-            <strong>
-              {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
-              {{ assignment.match.home_team }}
-              vs
-              {{ assignment.match.away_team }}
-            </strong>
-            <br>
-            {{ assignment.get_position_display }}
-            · {{ assignment.referee }}
-            · {{ assignment.match.venue }}
-            {% if assignment.response_note %}
-              <div class="muted">
-                请假说明：{{ assignment.response_note|linebreaksbr }}
-              </div>
+            <span>{{ notification.message }}</span>
+            {% if notification.link %}
+              <span class="item-links"><a href="{{ notification.link }}">查看</a></span>
             {% endif %}
-            <a href="{% url 'scheduling:assignment_update' assignment.match.pk %}">
-              更换裁判
-            </a>
-            ·
-            <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
-              查看详情
-            </a>
           </li>
         {% endfor %}
       </ul>
     {% else %}
-      <p class="muted">目前没有待处理的请假。</p>
+      <p class="muted">暂无新通知。</p>
     {% endif %}
-  {% endif %}
-
-  {% if has_referee_profile and perms.scheduling.view_match %}
-    <h2>我的裁判安排</h2>
-
-    {% if pending_assignments %}
-      <h3>待确认</h3>
-      <ul>
-        {% for assignment in pending_assignments %}
-          <li>
-            <strong>
-              {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
-              {{ assignment.match.home_team }}
-              vs
-              {{ assignment.match.away_team }}
-            </strong>
-            <br>
-            {{ assignment.get_position_display }}
-            · {{ assignment.match.venue }}
-            <br>
-            <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
-              查看详情
-            </a>
-            ·
-            <a href="{% url 'scheduling:assignment_respond' assignment.pk %}">
-              提交反馈
-            </a>
-          </li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-
-    {% if upcoming_assignments %}
-      <h3>其他近期安排</h3>
-      <ul>
-        {% for assignment in upcoming_assignments %}
-          <li>
-            <strong>
-              {{ assignment.match.kickoff_at|date:"n月j日 H:i" }}
-              {{ assignment.match.home_team }}
-              vs
-              {{ assignment.match.away_team }}
-            </strong>
-            <br>
-            {{ assignment.get_position_display }}
-            · {{ assignment.get_response_status_display }}
-            · {{ assignment.match.venue }}
-            <br>
-            <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
-              查看详情
-            </a>
-            ·
-            <a href="{% url 'scheduling:assignment_respond' assignment.pk %}">
-              修改反馈
-            </a>
-          </li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-
-    {% if not pending_assignments and not upcoming_assignments %}
-      <p class="muted">目前没有已发布的近期裁判安排。</p>
-    {% endif %}
-  {% endif %}
-
-  {% if perms.scheduling.view_match %}
-    <h2>比赛管理</h2>
-    <p>查看比赛时间、参赛球队、场地和裁判安排。</p>
-
-    <div class="form-actions">
-      <a class="button-link"
-         href="{% url 'scheduling:match_list' %}">
-        查看比赛列表
-      </a>
-
-      {% if perms.scheduling.add_match %}
-        <a class="button-link"
-           href="{% url 'scheduling:match_create' %}">
-          录入新比赛
-        </a>
-      {% endif %}
-
-      {% if perms.scheduling.view_refereeprofile %}
-        <a class="button-link"
-           href="{% url 'scheduling:referee_workload' %}">
-          裁判工作量
-        </a>
-      {% endif %}
-    </div>
-  {% endif %}
+  </section>
 
   {% if user.is_staff %}
-    <p>
-      <a href="{% url 'admin:index' %}">
-        进入管理后台
-      </a>
-    </p>
+    <section class="card span-all banner-card">
+      <div>
+        <h2>管理后台</h2>
+        <p class="muted">维护赛事、球队、场地、裁判资料、用户账号和邀请码。</p>
+      </div>
+      <a class="button-link" href="{% url 'admin:index' %}">进入管理后台</a>
+    </section>
   {% endif %}
-</section>
+</div>
 {% endblock %}
