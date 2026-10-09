@@ -447,6 +447,10 @@ class MatchAssignmentSummaryAdmin(admin.ModelAdmin):
             details,
         )
 
+    def changelist_view(self, request, extra_context=None):
+        extra_context = {"title": "裁判安排", **(extra_context or {})}
+        return super().changelist_view(request, extra_context)
+
     def has_add_permission(self, request):
         return False
 

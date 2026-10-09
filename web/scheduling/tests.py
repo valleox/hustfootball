@@ -2228,6 +2228,7 @@ class AssignmentSummaryAdminTests(TestCase):
         )
 
         self.assertContains(response, 'class="action-select"', count=1)
+        self.assertContains(response, "<h1>裁判安排</h1>", html=True)
         self.assertContains(response, "管理学院 vs 计算机学院")
         for name in ("张主裁", "李一助", "王二助", "赵四官"):
             self.assertContains(response, name)
