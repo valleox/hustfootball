@@ -1,3 +1,10 @@
+from django.conf import settings
+
+
+def site(request):
+    return {"site_name": settings.SITE_NAME}
+
+
 def notifications(request):
     user = getattr(request, "user", None)
     if user is None or not user.is_authenticated:

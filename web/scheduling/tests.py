@@ -1374,7 +1374,7 @@ class AssignmentPageTests(TestCase):
 
             self.assertEqual(
                 worksheet["A1"].value,
-                "足协裁判安排表",
+                "华中科技大学足球协会裁判安排表",
             )
 
             headers = [
@@ -2073,4 +2073,28 @@ class AdminLoginRedirectTests(TestCase):
         response = self.client.get(reverse("admin:index"))
 
         self.assertContains(response, "--header-bg: #145540")
-        self.assertContains(response, "足协裁判管理系统")
+        self.assertContains(response, "华中科技大学足球协会 · 管理后台")
+
+
+class SiteNavigationTests(TestCase):
+    def setUp(self):
+        call_command("setup_roles", stdout=StringIO())
+        self.user = get_user_model().objects.create_user(
+            username="nav_user",
+            password="x-password-123",
+        )
+        self.user.groups.add(Group.objects.get(name="裁判员"))
+        self.client.force_login(self.user)
+
+    def test_header_shows_site_name_and_home_link(self):
+        response = self.client.get(reverse("scheduling:notification_list"))
+
+        self.assertContains(response, "华中科技大学足球协会")
+        self.assertContains(response, "<title>通知 · 华中科技大学足球协会</title>", html=True)
+        self.assertContains(response, ">首页</a>")
+        self.assertNotContains(response, "足协裁判管理系统")
+
+    def test_match_list_links_back_home(self):
+        response = self.client.get(reverse("scheduling:match_list"))
+
+        self.assertContains(response, "返回首页")

@@ -2,6 +2,7 @@ from io import BytesIO
 from urllib.parse import quote
 
 from django import forms as django_forms
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required, permission_required
@@ -189,7 +190,7 @@ def assignment_export(request):
         end_column=len(headers),
     )
     title_cell = worksheet["A1"]
-    title_cell.value = "足协裁判安排表"
+    title_cell.value = f"{settings.SITE_NAME}裁判安排表"
     title_cell.font = Font(
         name="微软雅黑",
         size=16,

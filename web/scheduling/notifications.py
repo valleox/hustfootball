@@ -11,9 +11,6 @@ from .models import Notification
 
 logger = logging.getLogger(__name__)
 
-EMAIL_SUBJECT_PREFIX = "【足协裁判管理系统】"
-
-
 def _match_title(match):
     kickoff = timezone.localtime(match.kickoff_at).strftime("%m月%d日 %H:%M")
     return f"{kickoff} {match.home_team} vs {match.away_team}"
@@ -37,7 +34,7 @@ def send_notifications(request, items):
 
     emails = [
         EmailMessage(
-            subject=f"{EMAIL_SUBJECT_PREFIX}{subject}",
+            subject=f"【{settings.SITE_NAME}】{subject}",
             body=(
                 f"{message}\n\n"
                 f"查看详情：{request.build_absolute_uri(link)}\n\n"

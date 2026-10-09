@@ -68,6 +68,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                "scheduling.context_processors.site",
                 "scheduling.context_processors.notifications",
             ],
         },
@@ -238,6 +239,9 @@ else:
     SECURE_HSTS_SECONDS = 0
     SECURE_HSTS_INCLUDE_SUBDOMAINS = False
     SECURE_HSTS_PRELOAD = False
+
+# 网站名称（页面标题、后台标题、邮件和导出文件都使用这里）
+SITE_NAME = "华中科技大学足球协会"
 
 # 用户登录与退出
 LOGIN_URL = "login"

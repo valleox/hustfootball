@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.models import Group
 from django.utils import timezone
@@ -15,8 +16,8 @@ from .models import (
 )
 
 
-admin.site.site_header = "足协裁判管理系统"
-admin.site.site_title = "足协管理后台"
+admin.site.site_header = f"{settings.SITE_NAME} · 管理后台"
+admin.site.site_title = f"{settings.SITE_NAME}管理后台"
 admin.site.index_title = "系统管理"
 admin.site.site_url = "/"
 

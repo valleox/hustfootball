@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}足协裁判管理系统{% endblock %}</title>
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -33,6 +33,7 @@
     .header-actions {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 16px;
     }
     main { max-width: 900px; margin: auto; padding: 24px 16px; }
@@ -202,10 +203,11 @@
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="{% url 'scheduling:home' %}">
-        足协裁判管理系统
+        {{ site_name }}
       </a>
       {% if user.is_authenticated %}
         <div class="header-actions">
+          <a href="{% url 'scheduling:home' %}">首页</a>
           <a href="{% url 'scheduling:notification_list' %}">
             通知{% if unread_notification_count %}
               <span class="badge">{{ unread_notification_count }}</span>
