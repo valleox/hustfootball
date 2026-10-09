@@ -290,8 +290,8 @@ class Assignment(TimeStampedModel):
     )
 
     class Meta:
-        verbose_name = "裁判安排"
-        verbose_name_plural = "裁判安排"
+        verbose_name = "裁判安排明细"
+        verbose_name_plural = "裁判安排明细"
         ordering = ["match__kickoff_at", "position"]
         constraints = [
             models.UniqueConstraint(
@@ -402,3 +402,12 @@ class Notification(models.Model):
 
     def __str__(self):
         return self.message[:40]
+
+
+class MatchAssignmentSummary(Match):
+    """后台「裁判安排」列表：每场比赛一行，四个岗位并排显示。"""
+
+    class Meta:
+        proxy = True
+        verbose_name = "裁判安排"
+        verbose_name_plural = "裁判安排"

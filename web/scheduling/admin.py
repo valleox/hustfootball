@@ -1,5 +1,8 @@
 from django.conf import settings
 from django.contrib import admin, messages
+from django.db.models import Prefetch
+from django.urls import reverse
+from django.utils.html import format_html
 from django.contrib.auth.models import Group
 from django.utils import timezone
 
@@ -9,6 +12,7 @@ from .models import (
     Competition,
     InviteCode,
     Match,
+    MatchAssignmentSummary,
     Notification,
     RefereeProfile,
     Team,
@@ -22,10 +26,11 @@ admin.site.index_title = "系统管理"
 admin.site.site_url = "/"
 
 
-def update_response_time(assignment):
+def update_response_time(assignment, status_changed=False):
+    """反馈状态改为待确认时清空回应时间；改为确认或请假时记录当前时间。"""
     if assignment.response_status == Assignment.ResponseStatus.PENDING:
         assignment.responded_at = None
-    elif assignment.responded_at is None:
+    elif status_changed or assignment.responded_at is None:
         assignment.responded_at = timezone.now()
 
 
@@ -78,7 +83,6 @@ class AssignmentInline(admin.TabularInline):
         "referee",
         "response_status",
         "response_note",
-        "responded_at",
     )
 
 
@@ -139,6 +143,7 @@ class MatchAdmin(admin.ModelAdmin):
         return readonly_fields
 
     actions = ("publish_selected",)
+    actions_on_bottom = True
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
@@ -235,11 +240,20 @@ class MatchAdmin(admin.ModelAdmin):
         for deleted_object in formset.deleted_objects:
             deleted_object.delete()
 
+        changed_status = {
+            inline_form.instance.pk
+            for inline_form in formset.forms
+            if "response_status" in inline_form.changed_data
+        }
+
         for instance in instances:
             if isinstance(instance, Assignment):
                 if instance.assigned_by_id is None:
                     instance.assigned_by = request.user
-                update_response_time(instance)
+                update_response_time(
+                    instance,
+                    status_changed=instance.pk in changed_status,
+                )
 
             instance.save()
 
@@ -266,19 +280,32 @@ class AssignmentAdmin(admin.ModelAdmin):
         "match__away_team__name",
     )
     autocomplete_fields = ("match", "referee")
-    readonly_fields = ("assigned_by", "created_at", "updated_at")
+    readonly_fields = (
+        "responded_at",
+        "assigned_by",
+        "created_at",
+        "updated_at",
+    )
     list_select_related = (
         "match",
         "referee",
+        "match__competition",
         "match__home_team",
         "match__away_team",
     )
+
+    def get_model_perms(self, request):
+        # 列表改由「裁判安排」（每场比赛一行）提供；明细页仍可从该列表点击进入。
+        return {}
 
     def save_model(self, request, obj, form, change):
         if obj.assigned_by_id is None:
             obj.assigned_by = request.user
 
-        update_response_time(obj)
+        update_response_time(
+            obj,
+            status_changed="response_status" in form.changed_data,
+        )
         super().save_model(request, obj, form, change)
 
 
@@ -305,3 +332,134 @@ class NotificationAdmin(admin.ModelAdmin):
     search_fields = ("recipient__username", "message")
     list_select_related = ("recipient",)
     readonly_fields = ("created_at",)
+
+
+RESPONSE_COLORS = {
+    Assignment.ResponseStatus.PENDING: "#b54708",
+    Assignment.ResponseStatus.CONFIRMED: "#067647",
+    Assignment.ResponseStatus.LEAVE: "#b42318",
+}
+
+
+def assignments_by_position(match):
+    if not hasattr(match, "_assignments_by_position"):
+        match._assignments_by_position = {
+            assignment.position: assignment
+            for assignment in match.assignments.all()
+        }
+    return match._assignments_by_position
+
+
+def position_column(position, label):
+    @admin.display(description=label)
+    def column(self, obj):
+        assignment = assignments_by_position(obj).get(position)
+        if assignment is None:
+            return format_html('<span style="color:#98a2b3">未安排</span>')
+
+        return format_html(
+            '<a href="{}">{}</a><br>'
+            '<span style="color:{}">{}</span>',
+            reverse(
+                "admin:scheduling_assignment_change",
+                args=[assignment.pk],
+            ),
+            assignment.referee.name,
+            RESPONSE_COLORS.get(assignment.response_status, "inherit"),
+            assignment.get_response_status_display(),
+        )
+
+    return column
+
+
+@admin.register(MatchAssignmentSummary)
+class MatchAssignmentSummaryAdmin(admin.ModelAdmin):
+    list_display = (
+        "match_info",
+        "referee_column",
+        "assistant_1_column",
+        "assistant_2_column",
+        "fourth_official_column",
+        "assignment_status",
+    )
+    list_display_links = None
+    list_filter = (
+        "competition",
+        "assignment_status",
+        "status",
+    )
+    search_fields = (
+        "match_number",
+        "home_team__name",
+        "away_team__name",
+        "competition__name",
+    )
+    date_hierarchy = "kickoff_at"
+    actions = ("publish_selected",)
+    actions_on_bottom = True
+    list_per_page = 50
+
+    referee_column = position_column(
+        Assignment.Position.REFEREE,
+        "主裁判",
+    )
+    assistant_1_column = position_column(
+        Assignment.Position.ASSISTANT_1,
+        "第一助理裁判",
+    )
+    assistant_2_column = position_column(
+        Assignment.Position.ASSISTANT_2,
+        "第二助理裁判",
+    )
+    fourth_official_column = position_column(
+        Assignment.Position.FOURTH_OFFICIAL,
+        "第四官员",
+    )
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("competition", "home_team", "away_team", "venue")
+            .prefetch_related(
+                Prefetch(
+                    "assignments",
+                    queryset=Assignment.objects.select_related("referee"),
+                )
+            )
+        )
+
+    @admin.display(description="比赛", ordering="kickoff_at")
+    def match_info(self, obj):
+        kickoff = timezone.localtime(obj.kickoff_at).strftime("%m月%d日 %H:%M")
+        details = " · ".join(
+            part
+            for part in (str(obj.competition), obj.round_name, obj.match_number)
+            if part
+        )
+        return format_html(
+            '<a href="{}"><strong>{} {} vs {}</strong></a><br>'
+            '<span style="color:#667085">{}</span>',
+            reverse("admin:scheduling_match_change", args=[obj.pk]),
+            kickoff,
+            obj.home_team,
+            obj.away_team,
+            details,
+        )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.has_perm("scheduling.view_match")
+
+    def has_publish_permission(self, request):
+        return request.user.has_perm("scheduling.publish_assignments")
+
+    publish_selected = MatchAdmin.publish_selected

@@ -145,5 +145,5 @@ Preview 部署连接 Neon 的 `preview` 分支，在 Preview 上的测试不会�
 
 ## 2026-10-09 邀请码注册、工作量统计、通知（需要迁移）
 
-新增 migration `0002_invitecode`、`0003_notification`，按上面的顺序先迁移 `preview`，再迁移 `main`。
+新增 migration `0002_invitecode`、`0003_notification`、`0004_assignment_summary`（后台「裁判安排」按比赛汇总），按上面的顺序先迁移 `preview`，再迁移 `main`。
 邀请码在后台「邀请码」中创建（只有超级管理员能进入后台），把生成的码发给裁判即可。

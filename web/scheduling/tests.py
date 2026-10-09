@@ -2158,3 +2158,137 @@ class AdminChineseTests(TestCase):
                     msgstr,
                     "django.mo 已过期，请运行 compile_translations",
                 )
+
+
+class AssignmentSummaryAdminTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.admin_user = user_model.objects.create_superuser(
+            "summary_admin",
+            "summary@example.test",
+            "x-password-123",
+        )
+        competition = Competition.objects.create(name="院系杯", season="2026")
+        venue = Venue.objects.create(name="东操场")
+        cls.match = Match.objects.create(
+            competition=competition,
+            round_name="小组赛第1轮",
+            kickoff_at=timezone.now() + timedelta(days=2),
+            home_team=Team.objects.create(name="管理学院"),
+            away_team=Team.objects.create(name="计算机学院"),
+            venue=venue,
+        )
+        names = ["张主裁", "李一助", "王二助", "赵四官"]
+        statuses = [
+            Assignment.ResponseStatus.CONFIRMED,
+            Assignment.ResponseStatus.PENDING,
+            Assignment.ResponseStatus.LEAVE,
+            Assignment.ResponseStatus.PENDING,
+        ]
+        cls.assignments = []
+        for index, position in enumerate(Assignment.Position):
+            referee = RefereeProfile.objects.create(
+                user=user_model.objects.create_user(f"summary_ref_{index}"),
+                name=names[index],
+            )
+            cls.assignments.append(
+                Assignment.objects.create(
+                    match=cls.match,
+                    referee=referee,
+                    position=position,
+                    response_status=statuses[index],
+                    responded_at=(
+                        None
+                        if statuses[index] == Assignment.ResponseStatus.PENDING
+                        else timezone.now()
+                    ),
+                )
+            )
+
+    def setUp(self):
+        self.client.force_login(self.admin_user)
+
+    def test_summary_lists_one_row_per_match_with_all_positions(self):
+        response = self.client.get(
+            reverse("admin:scheduling_matchassignmentsummary_changelist")
+        )
+
+        self.assertContains(response, 'class="action-select"', count=1)
+        self.assertContains(response, "管理学院 vs 计算机学院")
+        for name in ("张主裁", "李一助", "王二助", "赵四官"):
+            self.assertContains(response, name)
+        for header in ("主裁判", "第一助理裁判", "第二助理裁判", "第四官员"):
+            self.assertContains(response, header)
+        self.assertContains(response, "申请请假")
+        self.assertNotContains(response, "回应时间")
+        self.assertContains(
+            response,
+            reverse(
+                "admin:scheduling_assignment_change",
+                args=[self.assignments[0].pk],
+            ),
+        )
+        self.assertContains(response, "publish_selected")
+
+    def test_assignment_detail_shows_response_time(self):
+        response = self.client.get(
+            reverse(
+                "admin:scheduling_assignment_change",
+                args=[self.assignments[0].pk],
+            )
+        )
+
+        self.assertContains(response, "回应时间")
+
+    def test_menu_shows_summary_not_detail_list(self):
+        response = self.client.get(reverse("admin:index"))
+
+        self.assertContains(
+            response,
+            reverse("admin:scheduling_matchassignmentsummary_changelist"),
+        )
+        self.assertNotContains(
+            response,
+            reverse("admin:scheduling_assignment_changelist"),
+        )
+
+    def test_match_inline_hides_response_time(self):
+        response = self.client.get(
+            reverse("admin:scheduling_match_change", args=[self.match.pk])
+        )
+
+        self.assertNotContains(response, "回应时间")
+
+    def test_match_changelist_shows_publish_action_top_and_bottom(self):
+        response = self.client.get(
+            reverse("admin:scheduling_match_changelist")
+        )
+
+        self.assertContains(
+            response,
+            '<option value="publish_selected">发布所选比赛的裁判安排</option>',
+            count=2,
+            html=True,
+        )
+
+    def test_changing_response_in_admin_updates_response_time(self):
+        assignment = self.assignments[0]
+        old_time = timezone.now() - timedelta(days=3)
+        Assignment.objects.filter(pk=assignment.pk).update(responded_at=old_time)
+        assignment.refresh_from_db()
+
+        request = RequestFactory().post("/admin/")
+        request.user = self.admin_user
+        from .admin import AssignmentAdmin
+
+        assignment.response_status = Assignment.ResponseStatus.LEAVE
+        AssignmentAdmin(Assignment, django_admin.site).save_model(
+            request,
+            assignment,
+            SimpleNamespace(changed_data=["response_status"]),
+            True,
+        )
+
+        assignment.refresh_from_db()
+        self.assertGreater(assignment.responded_at, old_time)
