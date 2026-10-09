@@ -120,6 +120,8 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# 项目自带的静态资源（校徽、会徽等）
+STATICFILES_DIRS = [BASE_DIR / "static"]
 
 ON_VERCEL = os.environ.get("VERCEL") == "1"
 

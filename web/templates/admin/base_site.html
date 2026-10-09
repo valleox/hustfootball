@@ -1,32 +1,288 @@
 {% extends "admin/base.html" %}
+{% load static %}
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title }}{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="{% static 'brand/hustfa.webp' %}" type="image/webp">
+{% endblock %}
+
+{# 后台固定使用浅色主题，与前台的玻璃拟态风格保持一致 #}
+{% block dark-mode-vars %}{% endblock %}
 
 {% block extrastyle %}
 {{ block.super }}
 <style>
-  /* 与网站前台一致的绿色配色 */
-  :root {
-    --primary: #146c52;
-    --secondary: #145540;
-    --header-bg: #145540;
-    --header-color: #e6f2eb;
-    --header-link-color: #ffffff;
-    --breadcrumbs-bg: #146c52;
-    --link-fg: #146c52;
-    --link-hover-color: #0e4a38;
-    --link-selected-fg: #145540;
-    --button-bg: #146c52;
-    --button-hover-bg: #145540;
-    --default-button-bg: #145540;
-    --default-button-hover-bg: #0e4a38;
-    --selected-row: #e6f2eb;
+  :root,
+  html[data-theme="light"],
+  html[data-theme="dark"] {
+    color-scheme: light;
+    --font-family-primary: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    --primary: #0066cc;
+    --secondary: #0066cc;
+    --accent: #0071e3;
+    --primary-fg: #ffffff;
+    --body-fg: #1d1d1f;
+    --body-bg: #f5f5f7;
+    --body-quiet-color: #6e6e73;
+    --body-medium-color: #424245;
+    --body-loud-color: #1d1d1f;
+    --header-color: #1d1d1f;
+    --header-branding-color: #1d1d1f;
+    --header-bg: rgba(255, 255, 255, 0.78);
+    --header-link-color: #1d1d1f;
+    --breadcrumbs-fg: #6e6e73;
+    --breadcrumbs-link-fg: #0066cc;
+    --breadcrumbs-bg: transparent;
+    --link-fg: #0066cc;
+    --link-hover-color: #0071e3;
+    --link-selected-fg: #0066cc;
+    --hairline-color: rgba(0, 0, 0, 0.08);
+    --border-color: rgba(0, 0, 0, 0.12);
+    --darkened-bg: rgba(255, 255, 255, 0.55);
+    --selected-bg: rgba(0, 102, 204, 0.08);
+    --selected-row: rgba(0, 102, 204, 0.08);
+    --button-fg: #ffffff;
+    --button-bg: #0066cc;
+    --button-hover-bg: #0071e3;
+    --default-button-bg: #0066cc;
+    --default-button-hover-bg: #0071e3;
+    --close-button-bg: #86868b;
+    --close-button-hover-bg: #6e6e73;
+    --object-tools-fg: #ffffff;
+    --object-tools-bg: #0066cc;
+    --object-tools-hover-bg: #0071e3;
+    --message-success-bg: rgba(52, 199, 89, 0.14);
+    --message-warning-bg: rgba(255, 159, 10, 0.16);
+    --message-error-bg: rgba(255, 59, 48, 0.12);
+    --glass: rgba(255, 255, 255, 0.62);
+    --glass-blur: saturate(180%) blur(20px);
+    --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.02), 0 8px 32px rgba(15, 35, 80, 0.07);
+  }
+
+  body {
+    background: var(--body-bg);
+    color: var(--body-fg);
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(48vmax 48vmax at 8% -6%, rgba(0, 102, 204, 0.16), transparent 62%),
+      radial-gradient(42vmax 42vmax at 100% 8%, rgba(90, 200, 250, 0.16), transparent 60%),
+      radial-gradient(52vmax 52vmax at 70% 110%, rgba(31, 64, 154, 0.12), transparent 62%);
+  }
+  .theme-toggle { display: none !important; }
+
+  /* 顶部：毛玻璃 + 两枚校徽 */
+  #header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 10px 24px;
+    background: var(--header-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--hairline-color);
+    color: var(--header-color);
+  }
+  #branding { display: flex; align-items: center; }
+  #site-name { margin: 0; }
+  #header #site-name a,
+  #header #site-name a:link,
+  #header #site-name a:visited {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--header-branding-color);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  #site-name a:hover { text-decoration: none; }
+  .admin-logos { display: flex; align-items: center; gap: 8px; }
+  .admin-logos img { display: block; height: 40px; width: auto; }
+  .admin-logos .logo-divider { width: 1px; height: 28px; background: var(--hairline-color); }
+  #user-tools { color: var(--body-quiet-color); font-size: 13px; }
+  #user-tools a,
+  #logout-form button { color: var(--link-fg); border-bottom: 0; }
+  #user-tools a:hover,
+  #logout-form button:hover { color: var(--link-hover-color); text-decoration: underline; }
+
+  div.breadcrumbs {
+    padding: 14px 24px;
+    background: transparent;
+    color: var(--breadcrumbs-fg);
+    font-size: 13px;
+  }
+  div.breadcrumbs a { color: var(--breadcrumbs-link-fg); }
+
+  #content { padding: 12px 24px 32px; }
+  #content > h1,
+  #content-main > h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+
+  /* 玻璃卡片：首页应用列表、表单分组、筛选栏、列表 */
+  /* 列表和面包屑中的链接已有颜色区分，去掉 Django 6 默认的下划线 */
+  #content #result_list a,
+  #content #changelist-filter a,
+  #content .xfull a,
+  #container div.breadcrumbs a { text-decoration: none; }
+  #content #result_list a:hover,
+  #container div.breadcrumbs a:hover { text-decoration: underline; }
+
+  .module,
+  #changelist-filter,
+  #changelist .results,
+  .submit-row,
+  .inline-group {
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 18px;
+    box-shadow: var(--glass-shadow);
+    overflow: hidden;
+  }
+  .module { margin-bottom: 20px; }
+  /* 列表过宽时横向滚动，而不是把列挤成竖条 */
+  #changelist .results { overflow-x: auto; }
+  #result_list { min-width: 720px; }
+  #result_list td,
+  #result_list th { white-space: nowrap; }
+  #result_list .field-match_info { min-width: 240px; white-space: normal; }
+  #changelist-search input[type=submit] {
+    border-radius: 9999px;
+    background: var(--button-bg);
+    color: var(--button-fg);
+    border: 0;
+    padding: 8px 18px;
+  }
+  .module h2,
+  .module caption,
+  .inline-group h2,
+  #changelist-filter h2 {
+    padding: 12px 16px;
+    background: transparent;
+    color: var(--body-fg);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    border-bottom: 1px solid var(--hairline-color);
+  }
+  .module h2 a,
+  .module caption a { color: var(--body-fg); }
+  .module table,
+  .module table caption { background: transparent; }
+  #nav-sidebar { background: transparent; border-right: 0; padding: 0 8px; }
+  #nav-sidebar .module { box-shadow: none; }
+  #nav-sidebar .current-app .section:link,
+  #nav-sidebar .current-app .section:visited { color: var(--primary); font-weight: 600; }
+  #toggle-nav-sidebar {
+    background: var(--glass);
+    border: 1px solid var(--hairline-color);
+    border-radius: 12px;
+    color: var(--primary);
+  }
+  fieldset.module { padding: 0; }
+  .form-row { border-bottom: 1px solid var(--hairline-color); padding: 12px 16px; }
+  #changelist .toplinks,
+  #changelist .actions,
+  #toolbar {
+    background: transparent;
+    border: 0;
+  }
+  #changelist .actions { padding: 8px 4px; }
+  #changelist-filter { margin-left: 20px; }
+  #changelist-filter li.selected a { color: var(--primary); }
+  thead th,
+  tfoot td { background: rgba(255, 255, 255, 0.55); color: var(--body-quiet-color); }
+  tr:nth-child(even),
+  .row-form-errors { background: rgba(255, 255, 255, 0.35); }
+  td,
+  th { border-bottom-color: var(--hairline-color); }
+
+  /* 按钮与输入框：Apple 胶囊 */
+  .button,
+  input[type=submit],
+  input[type=button],
+  .submit-row input,
+  a.button,
+  .object-tools a:link,
+  .object-tools a:visited {
+    border-radius: 9999px;
+    padding: 9px 18px;
+    font-size: 14px;
+    transition: transform 0.15s ease, background-color 0.2s;
+  }
+  .button:active,
+  input[type=submit]:active,
+  .object-tools a:active { transform: scale(0.95); }
+  .submit-row { padding: 12px 16px; margin: 20px 0; }
+  .submit-row a.deletelink { border-radius: 9999px; }
+  input[type=text],
+  input[type=password],
+  input[type=email],
+  input[type=url],
+  input[type=number],
+  input[type=tel],
+  input[type=search],
+  textarea,
+  select,
+  .vTextField {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 7px 10px;
+    background: rgba(255, 255, 255, 0.85);
+  }
+  input:focus,
+  textarea:focus,
+  select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.18);
+  }
+  .select2-container--admin-autocomplete .select2-selection--single,
+  .select2-container--admin-autocomplete .select2-selection--multiple {
+    border-radius: 10px;
+    border-color: var(--border-color);
+  }
+
+  ul.messagelist li {
+    border-radius: 12px;
+    margin: 0 0 10px;
+    color: var(--body-fg);
+  }
+
+  @media (max-width: 767px) {
+    #header { padding: 8px 14px; }
+    .admin-logos img { height: 32px; }
+    #site-name a { font-size: 16px; }
+    #content { padding: 10px 14px 24px; }
+    #changelist-filter { margin-left: 0; }
   }
 </style>
 {% endblock %}
 
 {% block branding %}
-<div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header }}</a></div>
+<div id="site-name">
+  <a href="{% url 'admin:index' %}">
+    <span class="admin-logos">
+      <img src="{% static 'brand/hust.webp' %}" alt="华中科技大学校徽" width="53" height="40">
+      <span class="logo-divider" aria-hidden="true"></span>
+      <img src="{% static 'brand/hustfa.webp' %}" alt="华中科技大学足球协会会徽" width="40" height="40">
+    </span>
+    <span>{{ site_header }}</span>
+  </a>
+</div>
 {% endblock %}
 
 {% block nav-global %}{% endblock %}

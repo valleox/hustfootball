@@ -2072,7 +2072,9 @@ class AdminLoginRedirectTests(TestCase):
 
         response = self.client.get(reverse("admin:index"))
 
-        self.assertContains(response, "--header-bg: #145540")
+        self.assertContains(response, "--primary: #0066cc")
+        self.assertContains(response, "brand/hust.webp")
+        self.assertContains(response, "brand/hustfa.webp")
         self.assertContains(response, "华中科技大学足球协会 · 管理后台")
 
 
@@ -2106,6 +2108,30 @@ class SiteNavigationTests(TestCase):
         )
         self.assertContains(response, "华中科技大学足球协会")
         self.assertNotContains(response, "testserver")
+
+    def test_both_logos_appear_in_header_seal_first(self):
+        response = self.client.get(reverse("scheduling:home"))
+        page = response.content.decode()
+        html = page[page.index('<header class="site-header">'):page.index("</header>")]
+
+        self.assertIn("brand/hust.webp", html)
+        self.assertIn("brand/hustfa.webp", html)
+        self.assertLess(
+            html.index("brand/hust.webp"),
+            html.index("brand/hustfa.webp"),
+        )
+        self.assertLess(
+            html.index("brand/hustfa.webp"),
+            html.index('class="brand-name"'),
+        )
+
+    def test_logos_appear_on_login_page(self):
+        self.client.logout()
+
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, "brand/hust.webp")
+        self.assertContains(response, "brand/hustfa.webp")
 
     def test_match_list_links_back_home(self):
         response = self.client.get(reverse("scheduling:match_list"))

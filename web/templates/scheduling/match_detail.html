@@ -81,7 +81,7 @@
 
   {% if perms.scheduling.add_assignment and perms.scheduling.change_assignment %}
     <p>
-      <a class="button-link"
+      <a class="button-link secondary"
          href="{% url 'scheduling:assignment_update' match.pk %}">
         安排裁判
       </a>
@@ -107,7 +107,7 @@
           {% if row.assignment %}
             <td>{{ row.assignment.referee }}</td>
             <td>
-              {{ row.assignment.get_response_status_display }}
+              <span class="status-tag {{ row.assignment.response_status }}">{{ row.assignment.get_response_status_display }}</span>
               {% if row.assignment.response_note %}
                 <div class="muted">
                   {{ row.assignment.response_note|linebreaksbr }}

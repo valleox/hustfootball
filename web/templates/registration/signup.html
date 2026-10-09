@@ -1,9 +1,14 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}裁判注册 · {{ org_name }}{% endblock %}
 
 {% block content %}
 <section class="card login-card">
+  <div class="login-brand" aria-hidden="true">
+    <img src="{% static 'brand/hust.webp' %}" alt="" width="95" height="72">
+    <img src="{% static 'brand/hustfa.webp' %}" alt="" width="72" height="72">
+  </div>
   <h1>裁判注册</h1>
   <p class="muted">需要排班管理员提供的邀请码。注册后即可查看和确认自己的裁判安排。</p>
 

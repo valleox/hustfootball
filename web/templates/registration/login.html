@@ -1,9 +1,14 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}用户登录 · {{ org_name }}{% endblock %}
 
 {% block content %}
 <section class="card login-card">
+  <div class="login-brand" aria-hidden="true">
+    <img src="{% static 'brand/hust.webp' %}" alt="" width="95" height="72">
+    <img src="{% static 'brand/hustfa.webp' %}" alt="" width="72" height="72">
+  </div>
   <h1>用户登录</h1>
   <p class="muted">请使用管理员分配的账号登录。</p>
 
