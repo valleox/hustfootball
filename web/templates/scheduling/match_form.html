@@ -4,15 +4,11 @@
 
 {% block content %}
 <section class="card">
-  <p>
+  <p class="back-link">
     {% if match %}
-      <a href="{% url 'scheduling:match_detail' match.pk %}">
-        返回比赛详情
-      </a>
+      <a class="button-link secondary small" href="{% url 'scheduling:match_detail' match.pk %}">← 返回比赛详情</a>
     {% else %}
-      <a href="{% url 'scheduling:match_list' %}">
-        返回比赛列表
-      </a>
+      <a class="button-link secondary small" href="{% url 'scheduling:match_list' %}">← 返回比赛列表</a>
     {% endif %}
   </p>
 

@@ -4,7 +4,9 @@
 
 {% block content %}
 <section class="card">
-  <p><a href="{% url 'scheduling:home' %}">返回首页</a></p>
+  <p class="back-link">
+    <a class="button-link secondary small" href="{% url 'scheduling:home' %}">← 返回首页</a>
+  </p>
   <h1>通知</h1>
 
   <ul class="notification-list">
@@ -15,7 +17,9 @@
         <div class="muted">
           {{ notification.created_at|date:"n月j日 H:i" }}
           {% if notification.link %}
-            · <a href="{{ notification.link }}">查看</a>
+          </div>
+          <div class="item-links">
+            <a class="button-link secondary small" href="{{ notification.link }}">查看</a>
           {% endif %}
         </div>
       </li>

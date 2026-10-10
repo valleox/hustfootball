@@ -30,8 +30,9 @@
     <button class="full-width" type="submit">注册</button>
   </form>
 
-  <p class="muted">
-    已有账号？<a href="{% url 'login' %}">返回登录</a>
-  </p>
+  <div class="auth-switch">
+    <span class="muted">已有账号？</span>
+    <a class="button-link secondary full-width" href="{% url 'login' %}">返回登录</a>
+  </div>
 </section>
 {% endblock %}

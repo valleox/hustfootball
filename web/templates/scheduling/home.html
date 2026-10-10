@@ -41,8 +41,8 @@
                 {{ assignment.get_position_display }} · {{ assignment.match.venue }}
               </span>
               <span class="item-links">
-                <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
-                <a href="{% url 'scheduling:assignment_respond' assignment.pk %}">提交反馈</a>
+                <a class="button-link small" href="{% url 'scheduling:assignment_respond' assignment.pk %}">提交反馈</a>
+                <a class="button-link secondary small" href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
               </span>
             </li>
           {% endfor %}
@@ -66,8 +66,8 @@
                 · {{ assignment.match.venue }}
               </span>
               <span class="item-links">
-                <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
-                <a href="{% url 'scheduling:assignment_respond' assignment.pk %}">修改反馈</a>
+                <a class="button-link small" href="{% url 'scheduling:assignment_respond' assignment.pk %}">修改反馈</a>
+                <a class="button-link secondary small" href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
               </span>
             </li>
           {% endfor %}
@@ -103,8 +103,8 @@
                 <span class="muted">请假说明：{{ assignment.response_note|linebreaksbr }}</span>
               {% endif %}
               <span class="item-links">
-                <a href="{% url 'scheduling:assignment_update' assignment.match.pk %}">更换裁判</a>
-                <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
+                <a class="button-link small" href="{% url 'scheduling:assignment_update' assignment.match.pk %}">更换裁判</a>
+                <a class="button-link secondary small" href="{% url 'scheduling:match_detail' assignment.match.pk %}">查看详情</a>
               </span>
             </li>
           {% endfor %}
@@ -147,8 +147,8 @@
   <section class="card">
     <div class="card-title">
       <h2>新通知</h2>
-      <a href="{% url 'scheduling:notification_list' %}">
-        {% if unread_notifications %}查看全部通知并标为已读{% else %}查看历史通知{% endif %}
+      <a class="button-link secondary small" href="{% url 'scheduling:notification_list' %}">
+        {% if unread_notifications %}全部标为已读{% else %}历史通知{% endif %}
       </a>
     </div>
     {% if unread_notifications %}
@@ -157,7 +157,7 @@
           <li>
             <span>{{ notification.message }}</span>
             {% if notification.link %}
-              <span class="item-links"><a href="{{ notification.link }}">查看</a></span>
+              <span class="item-links"><a class="button-link secondary small" href="{{ notification.link }}">查看</a></span>
             {% endif %}
           </li>
         {% endfor %}

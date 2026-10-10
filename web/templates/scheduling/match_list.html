@@ -4,7 +4,9 @@
 
 {% block content %}
 <section class="card">
-  <p><a href="{% url 'scheduling:home' %}">返回首页</a></p>
+  <p class="back-link">
+    <a class="button-link secondary small" href="{% url 'scheduling:home' %}">← 返回首页</a>
+  </p>
   <h1>比赛列表</h1>
   <p class="muted">查看已经录入系统的比赛场次。</p>
   {% if perms.scheduling.add_match or perms.scheduling.publish_assignments %}

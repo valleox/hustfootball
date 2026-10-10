@@ -613,6 +613,22 @@ class AssignmentPageTests(TestCase):
         )
         self.assertIsNotNone(assignment.responded_at)
 
+    def test_response_form_uses_choice_buttons(self):
+        assignment = Assignment.objects.get(
+            match=self.match,
+            position=Assignment.Position.REFEREE,
+        )
+        self.client.force_login(assignment.referee.user)
+
+        response = self.client.get(
+            reverse("scheduling:assignment_respond", args=[assignment.pk])
+        )
+
+        self.assertContains(response, 'class="choice-buttons"')
+        self.assertContains(response, 'name="response_status"', count=2)
+        self.assertContains(response, "← 返回比赛详情")
+        self.assertNotContains(response, "请选择反馈结果")
+
     def test_leave_response_requires_note(self):
         assignment = Assignment.objects.get(
             match=self.match,

@@ -356,6 +356,72 @@
     button.secondary:hover,
     .button-link.secondary:hover { background: var(--surface-strong); }
     .full-width { width: 100%; }
+    /* 小号按钮：列表项内的操作、返回按钮等 */
+    button.small,
+    .button-link.small {
+      min-height: 34px;
+      padding: 6px 16px;
+      font-size: 15px;
+    }
+    .back-link { margin: 0 0 16px; }
+    .back-link .button-link { padding-left: 12px; }
+    .auth-switch {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+      text-align: center;
+    }
+    /* 单选改为按钮组：反馈结果等 */
+    .choice-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .choice-buttons > div,
+    .choice-buttons > li { margin: 0; }
+    .choice-buttons label {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 12px 18px;
+      border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+      border-radius: 9999px;
+      background: var(--secondary-bg);
+      color: var(--primary);
+      font-size: 17px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s;
+    }
+    .choice-buttons label:hover { background: var(--surface-strong); }
+    .choice-buttons label:active { transform: scale(0.97); }
+    .choice-buttons input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .choice-buttons label:has(input:checked) {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+    .choice-buttons label:has(input[value="leave"]:checked) {
+      background: var(--danger);
+      border-color: var(--danger);
+    }
+    .choice-buttons label:has(input:focus-visible) {
+      box-shadow: 0 0 0 4px var(--primary-soft);
+    }
     /* 并列按钮统一宽度：每一列等宽，窄屏时自动换行 */
     .form-actions {
       display: grid;
@@ -515,7 +581,7 @@
     .match-list + h2 { margin-top: 32px; }
     .match-teams { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
     .item-title { font-weight: 600; }
-    .item-links { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px; }
+    .item-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
     .notification-list li.unread { border-color: color-mix(in srgb, var(--primary) 40%, transparent); background: var(--surface-strong); }
     .match-row { display: flex; align-items: center; gap: 12px; }
     .match-row .match-item { flex: 1; min-width: 0; }

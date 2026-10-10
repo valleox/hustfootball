@@ -4,10 +4,8 @@
 
 {% block content %}
 <section class="card">
-  <p>
-    <a href="{% url 'scheduling:match_list' %}">
-      返回比赛列表
-    </a>
+  <p class="back-link">
+    <a class="button-link secondary small" href="{% url 'scheduling:match_list' %}">← 返回比赛列表</a>
   </p>
 
   <h1>{{ match.home_team }} vs {{ match.away_team }}</h1>
@@ -114,8 +112,8 @@
                 </div>
               {% endif %}
               {% if row.can_respond %}
-                <div>
-                  <a href="{% url 'scheduling:assignment_respond' row.assignment.pk %}">
+                <div class="item-links">
+                  <a class="button-link small" href="{% url 'scheduling:assignment_respond' row.assignment.pk %}">
                     {% if row.assignment.response_status == "pending" %}
                       提交反馈
                     {% else %}
