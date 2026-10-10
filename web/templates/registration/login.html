@@ -15,8 +15,9 @@
   {% if user.is_authenticated %}
     <p class="notice">
       当前账号（{{ user.get_username }}）没有访问该页面的权限，
-      请换用有权限的账号登录，或<a href="{% url 'scheduling:home' %}">返回首页</a>。
+      请换用有权限的账号登录，或返回首页。
     </p>
+    <p><a class="button-link secondary small" href="{% url 'scheduling:home' %}">← 返回首页</a></p>
   {% endif %}
 
   {{ form.non_field_errors }}
@@ -40,8 +41,9 @@
     <button class="full-width" type="submit">登录</button>
   </form>
 
-  <p class="muted">
-    还没有账号？<a href="{% url 'signup' %}">使用邀请码注册</a>
-  </p>
+  <div class="auth-switch">
+    <span class="muted">还没有账号？</span>
+    <a class="button-link secondary full-width" href="{% url 'signup' %}">使用邀请码注册</a>
+  </div>
 </section>
 {% endblock %}

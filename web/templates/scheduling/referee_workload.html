@@ -4,7 +4,9 @@
 
 {% block content %}
 <section class="card">
-  <p><a href="{% url 'scheduling:home' %}">返回首页</a></p>
+  <p class="back-link">
+    <a class="button-link secondary small" href="{% url 'scheduling:home' %}">← 返回首页</a>
+  </p>
 
   <h1>裁判工作量</h1>
   <p class="muted">

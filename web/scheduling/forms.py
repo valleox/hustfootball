@@ -351,6 +351,7 @@ class AssignmentResponseForm(forms.ModelForm):
             "response_note": "反馈说明",
         }
         widgets = {
+            "response_status": forms.RadioSelect(attrs={"class": "choice-buttons"}),
             "response_note": forms.Textarea(
                 attrs={
                     "rows": 4,
@@ -365,7 +366,6 @@ class AssignmentResponseForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.fields["response_status"].choices = [
-            ("", "请选择反馈结果"),
             (
                 Assignment.ResponseStatus.CONFIRMED,
                 "确认参加执法",

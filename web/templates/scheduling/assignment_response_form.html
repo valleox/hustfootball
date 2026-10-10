@@ -4,10 +4,8 @@
 
 {% block content %}
 <section class="card">
-  <p>
-    <a href="{% url 'scheduling:match_detail' assignment.match.pk %}">
-      返回比赛详情
-    </a>
+  <p class="back-link">
+    <a class="button-link secondary small" href="{% url 'scheduling:match_detail' assignment.match.pk %}">← 返回比赛详情</a>
   </p>
 
   <h1>裁判安排反馈</h1>
