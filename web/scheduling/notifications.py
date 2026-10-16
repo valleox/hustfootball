@@ -79,6 +79,45 @@ def notify_assignments_published(request, match):
     return len(items)
 
 
+def notify_match_changed(request, match, changes, previous_title=None):
+    """已发布比赛的时间、场地或状态变更后通知本场全部裁判。
+
+    changes 为说明文字列表，例如「开球时间改为 10月12日 15:00」。
+    """
+    title = previous_title or _match_title(match)
+    link = reverse("scheduling:match_detail", args=[match.pk])
+    message = f"比赛信息有变动：{title}。{'；'.join(changes)}。"
+    if match.status == match.Status.SCHEDULED:
+        message += "请登录查看并重新确认。" if any(
+            change.startswith("开球时间") for change in changes
+        ) else "请登录查看。"
+
+    items = [
+        (assignment.referee.user, f"比赛变动：{title}", message, link)
+        for assignment in match.assignments.select_related("referee__user")
+        if assignment.referee.user.is_active
+    ]
+    send_notifications(request, items)
+    return len(items)
+
+
+def notify_assignment_removed(request, match, referees):
+    """已发布比赛中被撤下的裁判。referees 为 (裁判资料, 原岗位名称) 列表。"""
+    title = _match_title(match)
+    items = [
+        (
+            referee.user,
+            f"裁判安排取消：{title}",
+            f"你在 {title}（{match.venue}）的{position_name}安排已取消，无需到场。",
+            reverse("scheduling:home"),
+        )
+        for referee, position_name in referees
+        if referee.user.is_active
+    ]
+    send_notifications(request, items)
+    return len(items)
+
+
 def scheduling_managers():
     return (
         get_user_model()

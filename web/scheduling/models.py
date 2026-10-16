@@ -219,6 +219,16 @@ class Match(TimeStampedModel):
         ):
             raise ValidationError("主队和客队不能是同一支球队。")
 
+    def response_closed_reason(self):
+        """裁判不能再提交反馈的原因；还可以反馈时返回 None。"""
+        if self.assignment_status != self.AssignmentStatus.PUBLISHED:
+            return "该场裁判安排尚未发布，暂时不能反馈。"
+        if self.status == self.Status.CANCELLED:
+            return "该场比赛已取消，无需再反馈。"
+        if self.status == self.Status.FINISHED or self.kickoff_at <= timezone.now():
+            return "该场比赛已经开球，不能再修改反馈。如有问题请联系排班管理员。"
+        return None
+
     def __str__(self):
         # 后台下拉框等处显示：先赛事、轮次和对阵，再开球时间与场次编号。
         parts = [str(self.competition)]

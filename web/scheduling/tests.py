@@ -2537,3 +2537,338 @@ class DarkModeTests(TestCase):
         self.assertContains(response, 'html[data-theme="light"] {')
         self.assertContains(response, "hfa-theme-toggle")
         self.assertNotContains(response, "admin/css/dark_mode.css")
+
+
+class SchedulingBugFixTests(TestCase):
+    """后台换人、取消/改期、过期反馈和通知已读等问题的回归测试。"""
+
+    def setUp(self):
+        call_command("setup_roles", verbosity=0)
+        user_model = get_user_model()
+        self.admin_user = user_model.objects.create_superuser(
+            "fix-admin", "fix-admin@example.test", "Fix-pass-2026!"
+        )
+        referee_group = Group.objects.get(name="裁判员")
+        self.referees = []
+        for index in range(6):
+            user = user_model.objects.create_user(
+                f"fix-ref{index}", f"fix-ref{index}@example.test", "Fix-pass-2026!"
+            )
+            user.groups.add(referee_group)
+            self.referees.append(
+                RefereeProfile.objects.create(user=user, name=f"回归裁判{index}")
+            )
+        self.competition = Competition.objects.create(name="回归联赛", season="2026")
+        self.home_team = Team.objects.create(name="回归主队")
+        self.away_team = Team.objects.create(name="回归客队")
+        self.venue = Venue.objects.create(name="回归场地")
+        self.other_venue = Venue.objects.create(name="回归新场地")
+        self.match = self.make_match(timezone.now() + timedelta(days=2))
+        for position in range(1, 5):
+            Assignment.objects.create(
+                match=self.match,
+                referee=self.referees[position - 1],
+                position=position,
+                response_status=Assignment.ResponseStatus.CONFIRMED,
+                responded_at=timezone.now(),
+            )
+
+    def make_match(self, kickoff, published=True):
+        # 与表单一致，只精确到分钟。
+        kickoff = kickoff.replace(second=0, microsecond=0)
+        return Match.objects.create(
+            competition=self.competition,
+            kickoff_at=kickoff,
+            home_team=self.home_team,
+            away_team=self.away_team,
+            venue=self.venue,
+            assignment_status=(
+                Match.AssignmentStatus.PUBLISHED
+                if published
+                else Match.AssignmentStatus.DRAFT
+            ),
+            published_at=timezone.now() if published else None,
+        )
+
+    def notifications_for(self, referee):
+        return Notification.objects.filter(recipient=referee.user)
+
+    def match_form_data(self, **overrides):
+        data = {
+            "competition": self.match.competition_id,
+            "kickoff_at": timezone.localtime(self.match.kickoff_at).strftime(
+                "%Y-%m-%dT%H:%M"
+            ),
+            "home_team": self.match.home_team_id,
+            "away_team": self.match.away_team_id,
+            "venue": self.match.venue_id,
+            "status": self.match.status,
+        }
+        data.update(overrides)
+        return data
+
+    def admin_change_data(self, referee_for_first_row=None, kickoff=None):
+        kickoff = timezone.localtime(kickoff or self.match.kickoff_at)
+        data = {
+            "competition": self.match.competition_id,
+            "kickoff_at_0": kickoff.strftime("%Y-%m-%d"),
+            "kickoff_at_1": kickoff.strftime("%H:%M:%S"),
+            "home_team": self.match.home_team_id,
+            "away_team": self.match.away_team_id,
+            "venue": self.match.venue_id,
+            "status": self.match.status,
+            "assignment_status": self.match.assignment_status,
+        }
+        assignments = list(self.match.assignments.order_by("position"))
+        prefix = "assignments"
+        data.update(
+            {
+                f"{prefix}-TOTAL_FORMS": len(assignments),
+                f"{prefix}-INITIAL_FORMS": len(assignments),
+                f"{prefix}-MIN_NUM_FORMS": 0,
+                f"{prefix}-MAX_NUM_FORMS": 1000,
+            }
+        )
+        for index, assignment in enumerate(assignments):
+            referee = assignment.referee
+            if index == 0 and referee_for_first_row is not None:
+                referee = referee_for_first_row
+            data.update(
+                {
+                    f"{prefix}-{index}-id": assignment.pk,
+                    f"{prefix}-{index}-match": self.match.pk,
+                    f"{prefix}-{index}-position": assignment.position,
+                    f"{prefix}-{index}-referee": referee.pk,
+                    f"{prefix}-{index}-response_status": assignment.response_status,
+                    f"{prefix}-{index}-response_note": assignment.response_note,
+                }
+            )
+        return data
+
+    # ---- 后台换人 ----
+    def test_admin_inline_swap_resets_response_and_unpublishes(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.post(
+            reverse("admin:scheduling_match_change", args=[self.match.pk]),
+            self.admin_change_data(referee_for_first_row=self.referees[4]),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        assignment = self.match.assignments.get(position=1)
+        self.assertEqual(assignment.referee, self.referees[4])
+        self.assertEqual(assignment.response_status, Assignment.ResponseStatus.PENDING)
+        self.assertIsNone(assignment.responded_at)
+        self.match.refresh_from_db()
+        self.assertEqual(self.match.assignment_status, Match.AssignmentStatus.DRAFT)
+        # 被换下的裁判收到通知；其他岗位的确认保持不变。
+        self.assertTrue(
+            self.notifications_for(self.referees[0]).filter(message__contains="已取消").exists()
+        )
+        self.assertEqual(
+            self.match.assignments.get(position=2).response_status,
+            Assignment.ResponseStatus.CONFIRMED,
+        )
+
+    def test_admin_inline_checks_time_conflicts(self):
+        other = self.make_match(self.match.kickoff_at + timedelta(minutes=30))
+        Assignment.objects.create(match=other, referee=self.referees[4], position=1)
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("admin:scheduling_match_change", args=[self.match.pk]),
+            self.admin_change_data(referee_for_first_row=self.referees[4]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "时间冲突")
+        self.assertEqual(self.match.assignments.get(position=1).referee, self.referees[0])
+
+    def test_admin_assignment_detail_swap_resets_response(self):
+        assignment = self.match.assignments.get(position=1)
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("admin:scheduling_assignment_change", args=[assignment.pk]),
+            {
+                "match": self.match.pk,
+                "referee": self.referees[5].pk,
+                "position": 1,
+                "response_status": Assignment.ResponseStatus.CONFIRMED,
+                "response_note": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.referee, self.referees[5])
+        self.assertEqual(assignment.response_status, Assignment.ResponseStatus.PENDING)
+        self.match.refresh_from_db()
+        self.assertEqual(self.match.assignment_status, Match.AssignmentStatus.DRAFT)
+        self.assertTrue(self.notifications_for(self.referees[0]).exists())
+
+    # ---- 已取消 / 已开球的比赛 ----
+    def test_cancelled_match_hidden_from_referee_home_and_closed(self):
+        self.match.status = Match.Status.CANCELLED
+        self.match.save()
+        referee = self.referees[0]
+        assignment = self.match.assignments.get(referee=referee)
+        self.client.force_login(referee.user)
+
+        home = self.client.get(reverse("scheduling:home"))
+        self.assertNotContains(home, "回归主队")
+
+        self.client.post(
+            reverse("scheduling:assignment_respond", args=[assignment.pk]),
+            {"response_status": "leave", "response_note": "临时有事"},
+        )
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.response_status, Assignment.ResponseStatus.CONFIRMED)
+        self.assertFalse(Notification.objects.filter(recipient=self.admin_user).exists())
+
+    def test_cannot_respond_after_kickoff(self):
+        self.match.kickoff_at = timezone.now() - timedelta(hours=1)
+        self.match.save()
+        referee = self.referees[0]
+        assignment = self.match.assignments.get(referee=referee)
+        self.client.force_login(referee.user)
+
+        response = self.client.post(
+            reverse("scheduling:assignment_respond", args=[assignment.pk]),
+            {"response_status": "leave", "response_note": "临时有事"},
+            follow=True,
+        )
+
+        self.assertContains(response, "已经开球")
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.response_status, Assignment.ResponseStatus.CONFIRMED)
+        detail = self.client.get(reverse("scheduling:match_detail", args=[self.match.pk]))
+        self.assertNotContains(detail, "修改反馈")
+
+    # ---- 已发布比赛的改期 / 取消 ----
+    def test_reschedule_published_match_notifies_and_resets(self):
+        self.client.force_login(self.admin_user)
+        new_kickoff = timezone.localtime(self.match.kickoff_at) + timedelta(days=1)
+
+        response = self.client.post(
+            reverse("scheduling:match_update", args=[self.match.pk]),
+            self.match_form_data(kickoff_at=new_kickoff.strftime("%Y-%m-%dT%H:%M")),
+            follow=True,
+        )
+
+        self.assertContains(response, "已通知本场 4 名裁判")
+        for referee in self.referees[:4]:
+            self.assertTrue(
+                self.notifications_for(referee).filter(message__contains="开球时间改为").exists()
+            )
+        self.assertFalse(
+            self.match.assignments.exclude(
+                response_status=Assignment.ResponseStatus.PENDING
+            ).exists()
+        )
+
+    def test_venue_change_notifies_without_resetting(self):
+        self.client.force_login(self.admin_user)
+
+        self.client.post(
+            reverse("scheduling:match_update", args=[self.match.pk]),
+            self.match_form_data(venue=self.other_venue.pk),
+        )
+
+        self.assertTrue(
+            self.notifications_for(self.referees[0]).filter(message__contains="回归新场地").exists()
+        )
+        self.assertEqual(
+            self.match.assignments.get(position=1).response_status,
+            Assignment.ResponseStatus.CONFIRMED,
+        )
+
+    def test_cancel_published_match_notifies_referees(self):
+        self.client.force_login(self.admin_user)
+
+        self.client.post(
+            reverse("scheduling:match_update", args=[self.match.pk]),
+            self.match_form_data(status=Match.Status.CANCELLED),
+        )
+
+        for referee in self.referees[:4]:
+            self.assertTrue(
+                self.notifications_for(referee).filter(message__contains="比赛已取消").exists()
+            )
+
+    def test_draft_match_change_sends_nothing(self):
+        self.match.assignment_status = Match.AssignmentStatus.DRAFT
+        self.match.save()
+        self.client.force_login(self.admin_user)
+
+        self.client.post(
+            reverse("scheduling:match_update", args=[self.match.pk]),
+            self.match_form_data(venue=self.other_venue.pk),
+        )
+
+        self.assertFalse(Notification.objects.exists())
+
+    def test_reschedule_checks_referee_conflicts(self):
+        other = self.make_match(self.match.kickoff_at + timedelta(days=1))
+        Assignment.objects.create(match=other, referee=self.referees[0], position=1)
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("scheduling:match_update", args=[self.match.pk]),
+            self.match_form_data(
+                kickoff_at=timezone.localtime(other.kickoff_at).strftime("%Y-%m-%dT%H:%M")
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "回归裁判0")
+        self.assertContains(response, "时间冲突")
+
+    def test_admin_reschedule_published_match_notifies(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("admin:scheduling_match_change", args=[self.match.pk]),
+            self.admin_change_data(kickoff=self.match.kickoff_at + timedelta(days=3)),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            self.notifications_for(self.referees[1]).filter(message__contains="开球时间改为").exists()
+        )
+        self.match.refresh_from_db()
+        self.assertEqual(self.match.assignment_status, Match.AssignmentStatus.PUBLISHED)
+
+    # ---- 前台换人 ----
+    def test_frontend_swap_notifies_removed_referee(self):
+        self.client.force_login(self.admin_user)
+        current = {
+            assignment.position: assignment.referee_id
+            for assignment in self.match.assignments.all()
+        }
+
+        self.client.post(
+            reverse("scheduling:assignment_update", args=[self.match.pk]),
+            {
+                "referee": self.referees[5].pk,
+                "assistant_1": current[2],
+                "assistant_2": current[3],
+                "fourth_official": current[4],
+            },
+        )
+
+        self.assertTrue(
+            self.notifications_for(self.referees[0]).filter(message__contains="主裁判安排已取消").exists()
+        )
+        self.assertFalse(self.notifications_for(self.referees[1]).exists())
+
+    # ---- 通知 ----
+    def test_notification_page_marks_all_unread_as_read(self):
+        user = self.referees[0].user
+        Notification.objects.bulk_create(
+            Notification(recipient=user, message=f"通知 {index}") for index in range(60)
+        )
+        self.client.force_login(user)
+
+        self.client.get(reverse("scheduling:notification_list"))
+
+        self.assertFalse(user.notifications.filter(read_at__isnull=True).exists())

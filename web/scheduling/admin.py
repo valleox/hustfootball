@@ -8,8 +8,18 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.contrib.auth.models import Group
 from django.utils import timezone
+from django import forms
+from django.forms.models import BaseInlineFormSet
 
-from .publishing import publish_match, publish_matches
+from .forms import find_time_conflicts
+from .notifications import notify_assignment_removed
+from .publishing import (
+    after_match_update,
+    match_label,
+    match_snapshot,
+    publish_match,
+    publish_matches,
+)
 from .models import (
     Assignment,
     Competition,
@@ -113,8 +123,42 @@ class RefereeProfileAdmin(admin.ModelAdmin):
             obj.user.groups.add(referee_group)
 
 
+class AssignmentInlineFormSet(BaseInlineFormSet):
+    """后台排班与前台使用同一套时间冲突检查。"""
+
+    def clean(self):
+        super().clean()
+        match = self.instance
+        if match.status == Match.Status.CANCELLED or match.kickoff_at is None:
+            return
+
+        kickoff_changed = True
+        if match.pk:
+            saved_kickoff = (
+                Match.objects.filter(pk=match.pk)
+                .values_list("kickoff_at", flat=True)
+                .first()
+            )
+            kickoff_changed = saved_kickoff != match.kickoff_at
+
+        to_check = {}
+        for form in self.forms:
+            if not hasattr(form, "cleaned_data") or form.cleaned_data.get("DELETE"):
+                continue
+            referee = form.cleaned_data.get("referee")
+            if referee is None:
+                continue
+            if kickoff_changed or not form.instance.pk or "referee" in form.changed_data:
+                to_check[referee.pk] = form
+
+        conflicts = find_time_conflicts(match, match.kickoff_at, to_check)
+        for referee_id, message in conflicts.items():
+            to_check[referee_id].add_error("referee", message)
+
+
 class AssignmentInline(admin.TabularInline):
     model = Assignment
+    formset = AssignmentInlineFormSet
     extra = 1
     autocomplete_fields = ("referee",)
     fields = (
@@ -221,16 +265,18 @@ class MatchAdmin(admin.ModelAdmin):
 
         # 新发布的比赛先按草稿保存，等裁判安排（内联表单）保存后
         # 再在 save_related 中统一检查、发布并通知裁判。
+        previous = Match.objects.filter(pk=obj.pk).first() if change else None
+        was_published = (
+            previous is not None
+            and previous.assignment_status == Match.AssignmentStatus.PUBLISHED
+        )
+        request._match_was_published = was_published
+        request._removed_referees = []
+        request._referees_changed = False
+
         request._publish_match_after_save = False
         if obj.assignment_status == Match.AssignmentStatus.PUBLISHED:
-            previous = None
-            if change:
-                previous = (
-                    Match.objects.filter(pk=obj.pk)
-                    .values_list("assignment_status", flat=True)
-                    .first()
-                )
-            if previous != Match.AssignmentStatus.PUBLISHED:
+            if not was_published:
                 request._publish_match_after_save = True
                 obj.assignment_status = Match.AssignmentStatus.DRAFT
                 obj.published_at = None
@@ -239,8 +285,37 @@ class MatchAdmin(admin.ModelAdmin):
 
         super().save_model(request, obj, form, change)
 
+        # 已发布比赛改了时间、场地或状态：在裁判名单变动前通知原来的裁判。
+        if was_published:
+            notified = after_match_update(request, obj, match_snapshot(previous))
+            if notified:
+                self.message_user(
+                    request,
+                    f"比赛信息有变动，已通知本场 {notified} 名裁判。",
+                    messages.INFO,
+                )
+
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
+
+        match = form.instance
+        if (
+            getattr(request, "_match_was_published", False)
+            and getattr(request, "_referees_changed", False)
+            and match.assignment_status == Match.AssignmentStatus.PUBLISHED
+        ):
+            # 与前台一致：已发布的安排换人后退回草稿，等重新发布再通知新裁判。
+            match.assignment_status = Match.AssignmentStatus.DRAFT
+            match.published_at = None
+            match.save(
+                update_fields=["assignment_status", "published_at", "updated_at"]
+            )
+            notify_assignment_removed(request, match, request._removed_referees)
+            self.message_user(
+                request,
+                "裁判名单有变动，本场安排已退回草稿，请检查后重新发布。",
+                messages.WARNING,
+            )
 
         if getattr(request, "_publish_match_after_save", False):
             ok, notified, problem = publish_match(request, form.instance)
@@ -281,31 +356,77 @@ class MatchAdmin(admin.ModelAdmin):
     def save_formset(self, request, form, formset, change):
         instances = formset.save(commit=False)
 
+        removed = getattr(request, "_removed_referees", [])
+
         for deleted_object in formset.deleted_objects:
+            if isinstance(deleted_object, Assignment):
+                removed.append(
+                    (deleted_object.referee, deleted_object.get_position_display())
+                )
+                request._referees_changed = True
             deleted_object.delete()
 
-        changed_status = {
-            inline_form.instance.pk
-            for inline_form in formset.forms
-            if "response_status" in inline_form.changed_data
-        }
+        changed_status = set()
+        swapped = set()
+        for inline_form in formset.forms:
+            if "response_status" in inline_form.changed_data:
+                changed_status.add(inline_form.instance.pk)
+            if inline_form.instance.pk and "referee" in inline_form.changed_data:
+                swapped.add(inline_form.instance.pk)
+                old_referee = RefereeProfile.objects.filter(
+                    pk=inline_form.initial.get("referee")
+                ).first()
+                if old_referee is not None:
+                    removed.append(
+                        (old_referee, inline_form.instance.get_position_display())
+                    )
 
         for instance in instances:
             if isinstance(instance, Assignment):
                 if instance.assigned_by_id is None:
                     instance.assigned_by = request.user
-                update_response_time(
-                    instance,
-                    status_changed=instance.pk in changed_status,
-                )
+                if instance.pk is None or instance.pk in swapped:
+                    request._referees_changed = True
+                if instance.pk in swapped:
+                    # 换了裁判：原裁判的确认或请假不能留给新裁判。
+                    instance.response_status = Assignment.ResponseStatus.PENDING
+                    instance.response_note = ""
+                    instance.responded_at = None
+                else:
+                    update_response_time(
+                        instance,
+                        status_changed=instance.pk in changed_status,
+                    )
 
             instance.save()
 
         formset.save_m2m()
 
 
+class AssignmentAdminForm(forms.ModelForm):
+    class Meta:
+        model = Assignment
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        match = cleaned_data.get("match")
+        referee = cleaned_data.get("referee")
+        if (
+            match is not None
+            and referee is not None
+            and match.status != Match.Status.CANCELLED
+            and (not self.instance.pk or {"match", "referee"} & set(self.changed_data))
+        ):
+            conflict = find_time_conflicts(match, match.kickoff_at, [referee.pk])
+            if conflict:
+                self.add_error("referee", conflict[referee.pk])
+        return cleaned_data
+
+
 @admin.register(Assignment)
 class AssignmentAdmin(admin.ModelAdmin):
+    form = AssignmentAdminForm
     list_display = (
         "match",
         "position",
@@ -346,11 +467,51 @@ class AssignmentAdmin(admin.ModelAdmin):
         if obj.assigned_by_id is None:
             obj.assigned_by = request.user
 
-        update_response_time(
-            obj,
-            status_changed="response_status" in form.changed_data,
-        )
+        swapped = None
+        if change and {"referee", "match"} & set(form.changed_data):
+            swapped = Assignment.objects.select_related("match", "referee").get(
+                pk=obj.pk
+            )
+            # 换了裁判或比赛：原来的确认或请假不能留给新的安排。
+            obj.response_status = Assignment.ResponseStatus.PENDING
+            obj.response_note = ""
+            obj.responded_at = None
+        else:
+            update_response_time(
+                obj,
+                status_changed="response_status" in form.changed_data,
+            )
         super().save_model(request, obj, form, change)
+
+        notify_removed = (
+            swapped is not None
+            and swapped.match.assignment_status == Match.AssignmentStatus.PUBLISHED
+        )
+        # 新增或换人后，已发布的安排退回草稿，等重新发布再通知新裁判。
+        affected = {}
+        if not change or swapped is not None:
+            affected[obj.match_id] = Match.objects.get(pk=obj.match_id)
+        if swapped is not None:
+            affected.setdefault(swapped.match_id, swapped.match)
+        for match in affected.values():
+            if match.assignment_status != Match.AssignmentStatus.PUBLISHED:
+                continue
+            match.assignment_status = Match.AssignmentStatus.DRAFT
+            match.published_at = None
+            match.save(
+                update_fields=["assignment_status", "published_at", "updated_at"]
+            )
+            self.message_user(
+                request,
+                f"{match_label(match)} 的裁判安排已退回草稿，请检查后重新发布。",
+                messages.WARNING,
+            )
+        if notify_removed:
+            notify_assignment_removed(
+                request,
+                swapped.match,
+                [(swapped.referee, swapped.get_position_display())],
+            )
 
 
 @admin.register(InviteCode)
