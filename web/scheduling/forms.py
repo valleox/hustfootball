@@ -80,6 +80,34 @@ class MatchForm(forms.ModelForm):
         self.fields["away_team"].empty_label = "请选择客队"
         self.fields["venue"].empty_label = "请选择比赛场地"
 
+    def clean(self):
+        cleaned_data = super().clean()
+        kickoff = cleaned_data.get("kickoff_at")
+        status = cleaned_data.get("status")
+
+        if (
+            self.instance.pk
+            and kickoff
+            and "kickoff_at" in self.changed_data
+            and status == Match.Status.SCHEDULED
+        ):
+            assignments = {
+                assignment.referee_id: assignment
+                for assignment in self.instance.assignments.select_related(
+                    "referee"
+                )
+            }
+            conflicts = find_time_conflicts(
+                self.instance, kickoff, assignments
+            )
+            for referee_id, message in conflicts.items():
+                self.add_error(
+                    "kickoff_at",
+                    f"{assignments[referee_id].referee.name}：{message}",
+                )
+
+        return cleaned_data
+
     @staticmethod
     def _active_or_current(model, current_id):
         condition = Q(is_active=True)
@@ -91,6 +119,45 @@ class MatchForm(forms.ModelForm):
 
 # 同一裁判两场比赛的开球时间间隔小于此值时视为冲突。
 ASSIGNMENT_CONFLICT_WINDOW = timedelta(hours=2)
+
+
+def find_time_conflicts(match, kickoff, referee_ids):
+    """返回 {裁判 id: 冲突说明}，每名裁判只报告最早的一场冲突。
+
+    前台排班、后台排班和修改开球时间都使用这里的规则。
+    """
+    referee_ids = [pk for pk in referee_ids if pk]
+    if not referee_ids or kickoff is None:
+        return {}
+
+    conflicts = (
+        Assignment.objects.filter(
+            referee_id__in=referee_ids,
+            match__kickoff_at__gt=kickoff - ASSIGNMENT_CONFLICT_WINDOW,
+            match__kickoff_at__lt=kickoff + ASSIGNMENT_CONFLICT_WINDOW,
+        )
+        .exclude(match__status=Match.Status.CANCELLED)
+        .select_related("referee", "match__home_team", "match__away_team")
+        .order_by("match__kickoff_at")
+    )
+    if match is not None and match.pk:
+        conflicts = conflicts.exclude(match=match)
+
+    messages = {}
+    for conflict in conflicts:
+        if conflict.referee_id in messages:
+            continue
+        other_match = conflict.match
+        kickoff_text = timezone.localtime(
+            other_match.kickoff_at
+        ).strftime("%m月%d日 %H:%M")
+        messages[conflict.referee_id] = (
+            "时间冲突：该裁判已安排在"
+            f"{kickoff_text} "
+            f"{other_match.home_team} vs {other_match.away_team}"
+            f"（{conflict.get_position_display()}）。"
+        )
+    return messages
 
 
 class AssignmentForm(forms.Form):
@@ -132,6 +199,7 @@ class AssignmentForm(forms.Form):
     def __init__(self, *args, match, **kwargs):
         super().__init__(*args, **kwargs)
         self.match = match
+        self.removed_referees = []
 
         assignments = {
             assignment.position: assignment
@@ -227,43 +295,13 @@ class AssignmentForm(forms.Form):
         if not changed_fields:
             return
 
-        kickoff = self.match.kickoff_at
-        conflicts = (
-            Assignment.objects.filter(
-                referee_id__in=changed_fields,
-                match__kickoff_at__gt=(
-                    kickoff - ASSIGNMENT_CONFLICT_WINDOW
-                ),
-                match__kickoff_at__lt=(
-                    kickoff + ASSIGNMENT_CONFLICT_WINDOW
-                ),
-            )
-            .exclude(match=self.match)
-            .exclude(match__status=Match.Status.CANCELLED)
-            .select_related(
-                "match__home_team",
-                "match__away_team",
-            )
-            .order_by("match__kickoff_at")
+        conflicts = find_time_conflicts(
+            self.match,
+            self.match.kickoff_at,
+            changed_fields,
         )
-
-        reported = set()
-        for conflict in conflicts:
-            if conflict.referee_id in reported:
-                continue
-            reported.add(conflict.referee_id)
-
-            other_match = conflict.match
-            kickoff_text = timezone.localtime(
-                other_match.kickoff_at
-            ).strftime("%m月%d日 %H:%M")
-            self.add_error(
-                changed_fields[conflict.referee_id],
-                "时间冲突：该裁判已安排在"
-                f"{kickoff_text} "
-                f"{other_match.home_team} vs {other_match.away_team}"
-                f"（{conflict.get_position_display()}）。",
-            )
+        for referee_id, message in conflicts.items():
+            self.add_error(changed_fields[referee_id], message)
 
     @transaction.atomic
     def save(self, *, assigned_by):
@@ -290,6 +328,16 @@ class AssignmentForm(forms.Form):
                 changed_positions.append(
                     (position, selected_referee)
                 )
+
+        # 已发布比赛中被替换或撤下的裁判，保存后需要通知。
+        self.removed_referees = [
+            (
+                existing_assignments[position].referee,
+                existing_assignments[position].get_position_display(),
+            )
+            for position, _referee in changed_positions
+            if position in existing_assignments
+        ]
 
         if not changed_positions:
             return False

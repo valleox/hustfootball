@@ -28,11 +28,15 @@ from .models import (
     Assignment,
     Competition,
     Match,
-    Notification,
     RefereeProfile,
 )
-from .notifications import notify_leave_request
-from .publishing import publish_match, publish_matches
+from .notifications import notify_assignment_removed, notify_leave_request
+from .publishing import (
+    after_match_update,
+    match_snapshot,
+    publish_match,
+    publish_matches,
+)
 
 
 @never_cache
@@ -57,7 +61,9 @@ def home(request):
             match__assignment_status=(
                 Match.AssignmentStatus.PUBLISHED
             ),
-            match__kickoff_at__date__gte=timezone.localdate(),
+            # 已取消、已结束或已经开球的比赛不再需要反馈。
+            match__status=Match.Status.SCHEDULED,
+            match__kickoff_at__gt=timezone.now(),
         ).select_related(
             "match",
             "match__competition",
@@ -456,8 +462,7 @@ def match_detail(request, pk):
                 "assignment": assignment,
                 "can_respond": (
                     assignment is not None
-                    and match.assignment_status
-                    == Match.AssignmentStatus.PUBLISHED
+                    and match.response_closed_reason() is None
                     and assignment.referee.user_id
                     == request.user.id
                 ),
@@ -508,6 +513,7 @@ def match_create(request):
 @permission_required("scheduling.change_match", raise_exception=True)
 def match_update(request, pk):
     match = get_object_or_404(Match, pk=pk)
+    previous = match_snapshot(match)
     form = MatchForm(
         request.POST if request.method == "POST" else None,
         instance=match,
@@ -515,7 +521,14 @@ def match_update(request, pk):
 
     if request.method == "POST" and form.is_valid():
         match = form.save()
-        messages.success(request, "比赛信息已更新。")
+        notified = after_match_update(request, match, previous)
+        if notified:
+            messages.success(
+                request,
+                f"比赛信息已更新，已通知本场 {notified} 名裁判。",
+            )
+        else:
+            messages.success(request, "比赛信息已更新。")
 
         return redirect(
             "scheduling:match_detail",
@@ -564,6 +577,9 @@ def assignment_update(request, pk):
         changed = form.save(assigned_by=request.user)
 
         if changed and was_published:
+            notify_assignment_removed(
+                request, match, form.removed_referees
+            )
             messages.success(
                 request,
                 "裁判安排已保存，原安排已退回草稿，"
@@ -667,14 +683,9 @@ def assignment_respond(request, pk):
     if assignment.referee.user_id != request.user.id:
         raise PermissionDenied("不能反馈其他裁判的安排。")
 
-    if (
-        assignment.match.assignment_status
-        != Match.AssignmentStatus.PUBLISHED
-    ):
-        messages.error(
-            request,
-            "该场裁判安排尚未发布，暂时不能反馈。",
-        )
+    closed_reason = assignment.match.response_closed_reason()
+    if closed_reason:
+        messages.error(request, closed_reason)
         return redirect(
             "scheduling:match_detail",
             pk=assignment.match_id,
@@ -850,10 +861,10 @@ def notification_list(request):
         if notification.read_at is None
     ]
 
-    if unread_ids:
-        Notification.objects.filter(pk__in=unread_ids).update(
-            read_at=timezone.now()
-        )
+    # 包括没显示出来的更早通知，否则页首未读数永远消不掉。
+    request.user.notifications.filter(read_at__isnull=True).update(
+        read_at=timezone.now()
+    )
 
     return render(
         request,
