@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Max, Q
+from django.db.models import Count, Max, Prefetch, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -119,6 +119,7 @@ def home(request):
 @permission_required("scheduling.view_match", raise_exception=True)
 def match_list(request):
     today = timezone.localdate()
+    can_see_drafts = request.user.has_perm("scheduling.change_assignment")
 
     matches = Match.objects.select_related(
         "competition",
@@ -127,13 +128,78 @@ def match_list(request):
         "venue",
     ).annotate(assigned_count=Count("assignments"))
 
+    upcoming_matches = list(
+        matches.filter(kickoff_at__date__gte=today)
+        .prefetch_related(
+            Prefetch(
+                "assignments",
+                queryset=Assignment.objects.select_related("referee"),
+            )
+        )
+        .order_by("kickoff_at", "id")
+    )
+
+    # 每场比赛的四个岗位：草稿阶段只有排班管理员能看到名单（与比赛详情一致）。
+    summary = {"matches": 0, "gaps": 0, "leave": 0, "pending": 0}
+    for match in upcoming_matches:
+        by_position = {
+            assignment.position: assignment
+            for assignment in match.assignments.all()
+        }
+        match.lineup_visible = (
+            can_see_drafts
+            or match.assignment_status == Match.AssignmentStatus.PUBLISHED
+        )
+        match.lineup = [
+            {"label": label, "assignment": by_position.get(position)}
+            for position, label in Assignment.Position.choices
+        ]
+        statuses = [a.response_status for a in by_position.values()]
+        match.gap_count = (
+            len(Assignment.Position.choices) - len(by_position)
+            if match.status == Match.Status.SCHEDULED
+            else 0
+        )
+        match.leave_count = statuses.count(Assignment.ResponseStatus.LEAVE)
+        match.pending_count = (
+            statuses.count(Assignment.ResponseStatus.PENDING)
+            if match.assignment_status == Match.AssignmentStatus.PUBLISHED
+            else 0
+        )
+        if match.status == Match.Status.SCHEDULED and match.lineup_visible:
+            summary["matches"] += 1
+            summary["gaps"] += match.gap_count
+            summary["leave"] += match.leave_count
+            summary["pending"] += match.pending_count
+
+    filters = {
+        "gaps": ("缺裁判", lambda m: m.gap_count),
+        "leave": ("有请假", lambda m: m.leave_count),
+        "pending": ("待确认", lambda m: m.pending_count),
+    }
+    active_filter = request.GET.get("show", "")
+    if active_filter in filters:
+        predicate = filters[active_filter][1]
+        upcoming_matches = [
+            match
+            for match in upcoming_matches
+            if match.lineup_visible
+            and match.status == Match.Status.SCHEDULED
+            and predicate(match)
+        ]
+    else:
+        active_filter = ""
+
     context = {
-        "upcoming_matches": matches.filter(
-            kickoff_at__date__gte=today
-        ).order_by("kickoff_at", "id"),
+        "upcoming_matches": upcoming_matches,
         "past_matches": matches.filter(
             kickoff_at__date__lt=today
         ).order_by("-kickoff_at", "-id"),
+        "summary": summary,
+        "show_summary": can_see_drafts,
+        "filter_options": [("", "全部")]
+        + [(key, label) for key, (label, _) in filters.items()],
+        "active_filter": active_filter,
     }
 
     return render(request, "scheduling/match_list.html", context)

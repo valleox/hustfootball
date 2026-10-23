@@ -5,7 +5,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import GroupAdmin, UserAdmin
 from django.db.models import Prefetch
 from django.urls import reverse
-from django.utils.html import format_html
+from datetime import timedelta
+
+from django.utils.html import format_html, format_html_join
 from django.contrib.auth.models import Group
 from django.utils import timezone
 from django import forms
@@ -169,15 +171,106 @@ class AssignmentInline(admin.TabularInline):
     )
 
 
+class KickoffRangeFilter(admin.SimpleListFilter):
+    """比赛时间筛选，默认只看今天及以后的比赛。"""
+
+    title = "比赛时间"
+    parameter_name = "when"
+    default = "upcoming"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("upcoming", "今天及以后"),
+            ("week", "未来 7 天"),
+            ("past", "已过"),
+            ("all", "全部"),
+        )
+
+    def current(self):
+        value = self.value()
+        return value if value in dict(self.lookup_choices) else self.default
+
+    def choices(self, changelist):
+        current = self.current()
+        for value, label in self.lookup_choices:
+            yield {
+                "selected": current == value,
+                "query_string": changelist.get_query_string(
+                    {self.parameter_name: value}
+                ),
+                "display": label,
+            }
+
+    def queryset(self, request, queryset):
+        today = timezone.localdate()
+        current = self.current()
+        if current == "upcoming":
+            return queryset.filter(kickoff_at__date__gte=today)
+        if current == "week":
+            return queryset.filter(
+                kickoff_at__date__gte=today,
+                kickoff_at__date__lt=today + timedelta(days=7),
+            )
+        if current == "past":
+            return queryset.filter(kickoff_at__date__lt=today)
+        return queryset
+
+
+class UpcomingFirstMixin:
+    """未来的比赛按开球时间从近到远排列；查看已过比赛时从近到远倒序。"""
+
+    def get_ordering(self, request):
+        if request.GET.get(KickoffRangeFilter.parameter_name) in ("past", "all"):
+            return ("-kickoff_at", "-id")
+        return ("kickoff_at", "id")
+
+
+def lineup_html(match):
+    """后台比赛列表里的紧凑裁判名单：岗位简称 + 姓名，按反馈状态着色。"""
+    by_position = assignments_by_position(match)
+    rows = []
+    for position, short in LINEUP_SHORT_NAMES:
+        assignment = by_position.get(position)
+        if assignment is None:
+            rows.append(
+                format_html(
+                    '<span class="lineup-row resp-empty"><b>{}</b>未安排</span>', short
+                )
+            )
+        else:
+            rows.append(
+                format_html(
+                    '<span class="lineup-row resp-{}" title="{}"><b>{}</b>{}</span>',
+                    assignment.response_status,
+                    assignment.get_response_status_display(),
+                    short,
+                    assignment.referee.name,
+                )
+            )
+    return format_html(
+        '<div class="lineup-cell">{}</div>', format_html_join("", "{}", ((row,) for row in rows))
+    )
+
+
+LINEUP_SHORT_NAMES = (
+    (Assignment.Position.REFEREE, "主裁"),
+    (Assignment.Position.ASSISTANT_1, "一助"),
+    (Assignment.Position.ASSISTANT_2, "二助"),
+    (Assignment.Position.FOURTH_OFFICIAL, "四官"),
+)
+
+
 @admin.register(Match)
-class MatchAdmin(admin.ModelAdmin):
+class MatchAdmin(UpcomingFirstMixin, admin.ModelAdmin):
     list_display = (
         "match_overview",
+        "lineup",
         "status",
         "assignment_status",
     )
     list_display_links = None
     list_filter = (
+        KickoffRangeFilter,
         "competition",
         "status",
         "assignment_status",
@@ -232,12 +325,21 @@ class MatchAdmin(admin.ModelAdmin):
             reverse("admin:scheduling_match_change", args=[obj.pk]),
         )
 
+    @admin.display(description="裁判")
+    def lineup(self, obj):
+        return lineup_html(obj)
+
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
             "competition",
             "home_team",
             "away_team",
             "venue",
+        ).prefetch_related(
+            Prefetch(
+                "assignments",
+                queryset=Assignment.objects.select_related("referee"),
+            )
         )
 
     def get_search_results(self, request, queryset, search_term):
@@ -573,7 +675,7 @@ def position_column(position, label):
 
 
 @admin.register(MatchAssignmentSummary)
-class MatchAssignmentSummaryAdmin(admin.ModelAdmin):
+class MatchAssignmentSummaryAdmin(UpcomingFirstMixin, admin.ModelAdmin):
     list_display = (
         "match_info",
         "referee_column",
@@ -584,6 +686,7 @@ class MatchAssignmentSummaryAdmin(admin.ModelAdmin):
     )
     list_display_links = None
     list_filter = (
+        KickoffRangeFilter,
         "competition",
         "assignment_status",
         "status",

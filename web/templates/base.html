@@ -550,6 +550,56 @@
     .status-tag.confirmed { background: var(--success-soft); color: var(--success); }
     .status-tag.leave { background: var(--danger-soft); color: var(--danger); }
 
+    /* ===== 排班概况与裁判名单 ===== */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin: 12px 0 16px;
+    }
+    .stat {
+      display: grid;
+      gap: 2px;
+      padding: 12px 16px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+    }
+    .stat strong { font-size: 26px; line-height: 1.1; letter-spacing: -0.02em; }
+    .stat span { color: var(--ink-muted); font-size: 14px; }
+    .stat.danger strong { color: var(--danger); }
+    .stat.warning strong { color: var(--warning); }
+    .filter-pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+    .filter-pills .pill {
+      padding: 6px 16px;
+      border: 1px solid var(--hairline);
+      border-radius: 9999px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 15px;
+    }
+    .filter-pills .pill:hover { background: var(--surface-strong); text-decoration: none; }
+    .filter-pills .pill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .lineup {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .lineup-slot {
+      display: grid;
+      gap: 2px;
+      align-content: start;
+      padding: 8px 12px;
+      border-radius: var(--radius-md);
+      background: var(--hover-tint);
+    }
+    .lineup-slot .status-tag { justify-self: start; margin-top: 2px; font-size: 12px; padding: 1px 8px; }
+    .lineup-role { color: var(--ink-muted); font-size: 13px; }
+    .lineup-name { font-weight: 600; }
+    .lineup-slot.empty { background: var(--danger-soft); }
+    .lineup-slot.empty .lineup-name { color: var(--danger); font-weight: 500; }
+
     /* ===== 列表 ===== */
     .item-list,
     .match-list,

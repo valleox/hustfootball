@@ -29,6 +29,22 @@
 
   <h2>今天及之后的比赛</h2>
 
+  {% if show_summary %}
+    <div class="stat-row" aria-label="近期排班概况">
+      <div class="stat"><strong>{{ summary.matches }}</strong><span>场待进行</span></div>
+      <div class="stat {% if summary.gaps %}danger{% endif %}"><strong>{{ summary.gaps }}</strong><span>个岗位缺裁判</span></div>
+      <div class="stat {% if summary.leave %}danger{% endif %}"><strong>{{ summary.leave }}</strong><span>人请假</span></div>
+      <div class="stat {% if summary.pending %}warning{% endif %}"><strong>{{ summary.pending }}</strong><span>人待确认</span></div>
+    </div>
+    <nav class="filter-pills" aria-label="筛选比赛">
+      {% for key, label in filter_options %}
+        <a class="pill {% if key == active_filter %}active{% endif %}"
+           href="{% url 'scheduling:match_list' %}{% if key %}?show={{ key }}{% endif %}"
+           {% if key == active_filter %}aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
   {% if perms.scheduling.publish_assignments %}
     <form method="post"
           action="{% url 'scheduling:assignment_bulk_publish' %}"
@@ -80,10 +96,29 @@
             </span>
             <span class="muted">已安排 {{ match.assigned_count }}/4 个岗位</span>
           </span>
+          {% if match.lineup_visible and match.status != "cancelled" %}
+            <span class="lineup" aria-label="裁判名单">
+              {% for slot in match.lineup %}
+                <span class="lineup-slot {% if not slot.assignment %}empty{% endif %}">
+                  <span class="lineup-role">{{ slot.label }}</span>
+                  {% if slot.assignment %}
+                    <span class="lineup-name">{{ slot.assignment.referee.name }}</span>
+                    {% if match.assignment_status == "published" %}
+                      <span class="status-tag {{ slot.assignment.response_status }}">{{ slot.assignment.get_response_status_display }}</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="lineup-name">未安排</span>
+                  {% endif %}
+                </span>
+              {% endfor %}
+            </span>
+          {% endif %}
         </a>
       </li>
     {% empty %}
-      <li class="muted">目前没有今天及之后的比赛。</li>
+      <li class="muted">
+        {% if active_filter %}没有符合条件的比赛。{% else %}目前没有今天及之后的比赛。{% endif %}
+      </li>
     {% endfor %}
   </ul>
 
