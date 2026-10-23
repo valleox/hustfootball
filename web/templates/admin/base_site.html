@@ -547,6 +547,22 @@
   .resp-confirmed { color: var(--resp-confirmed); }
   .resp-leave { color: var(--resp-leave); }
   .resp-empty { color: var(--resp-empty); }
+  /* 比赛列表中的紧凑裁判名单 */
+  .lineup-cell {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, max-content));
+    gap: 4px 14px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .lineup-row b {
+    margin-right: 6px;
+    color: var(--body-quiet-color);
+    font-weight: 500;
+  }
+  .lineup-row.resp-pending,
+  .lineup-row.resp-confirmed,
+  .lineup-row.resp-leave { font-weight: 600; }
 
   /* 日期导航（2026 / 10月4日 …）：内缩并做成小胶囊 */
   #changelist .xfull,

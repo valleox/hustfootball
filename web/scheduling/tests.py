@@ -2872,3 +2872,100 @@ class SchedulingBugFixTests(TestCase):
         self.client.get(reverse("scheduling:notification_list"))
 
         self.assertFalse(user.notifications.filter(read_at__isnull=True).exists())
+
+
+class RefereeOverviewTests(TestCase):
+    """排班管理员在前后台直接看到未来比赛的裁判名单。"""
+
+    def setUp(self):
+        call_command("setup_roles", verbosity=0)
+        user_model = get_user_model()
+        self.scheduler = user_model.objects.create_user("ov-scheduler", password="Ov-pass-2026!")
+        self.scheduler.groups.add(Group.objects.get(name="排班管理员"))
+        self.referee_user = user_model.objects.create_user("ov-referee", password="Ov-pass-2026!")
+        self.referee_user.groups.add(Group.objects.get(name="裁判员"))
+        self.admin_user = user_model.objects.create_superuser(
+            "ov-admin", "ov-admin@example.test", "Ov-pass-2026!"
+        )
+        self.referees = [
+            RefereeProfile.objects.create(
+                user=user_model.objects.create_user(f"ov-ref{index}"),
+                name=f"名单裁判{index}",
+            )
+            for index in range(4)
+        ]
+        competition = Competition.objects.create(name="总览联赛", season="2026")
+        teams = [Team.objects.create(name=f"总览队{index}") for index in range(6)]
+        venue = Venue.objects.create(name="总览场地")
+        now = timezone.now().replace(second=0, microsecond=0)
+
+        def make(days, home, away, published):
+            return Match.objects.create(
+                competition=competition,
+                kickoff_at=now + timedelta(days=days),
+                home_team=teams[home],
+                away_team=teams[away],
+                venue=venue,
+                assignment_status="published" if published else "draft",
+            )
+
+        # 已发布、四人齐全，其中一人请假
+        self.published = make(2, 0, 1, True)
+        for position, referee in enumerate(self.referees, start=1):
+            Assignment.objects.create(
+                match=self.published,
+                referee=referee,
+                position=position,
+                response_status="leave" if position == 2 else "confirmed",
+            )
+        # 草稿，只安排了主裁判
+        self.draft = make(3, 2, 3, False)
+        Assignment.objects.create(match=self.draft, referee=self.referees[0], position=1)
+        # 已经过去的比赛
+        self.past = make(-3, 4, 5, True)
+
+    def test_scheduler_sees_lineup_and_summary(self):
+        self.client.force_login(self.scheduler)
+
+        response = self.client.get(reverse("scheduling:match_list"))
+
+        self.assertContains(response, 'class="lineup"', count=2)
+        self.assertContains(response, "名单裁判1")
+        self.assertContains(response, "未安排", count=3)
+        summary = response.context["summary"]
+        self.assertEqual(summary, {"matches": 2, "gaps": 3, "leave": 1, "pending": 0})
+
+    def test_referee_only_sees_published_lineups(self):
+        self.client.force_login(self.referee_user)
+
+        response = self.client.get(reverse("scheduling:match_list"))
+
+        self.assertContains(response, 'class="lineup"', count=1)
+        self.assertNotContains(response, "个岗位缺裁判")
+
+    def test_filters(self):
+        self.client.force_login(self.scheduler)
+
+        gaps = self.client.get(reverse("scheduling:match_list"), {"show": "gaps"})
+        leave = self.client.get(reverse("scheduling:match_list"), {"show": "leave"})
+
+        self.assertEqual(list(gaps.context["upcoming_matches"]), [self.draft])
+        self.assertEqual(list(leave.context["upcoming_matches"]), [self.published])
+
+    def test_admin_lists_default_to_upcoming_with_names(self):
+        self.client.force_login(self.admin_user)
+
+        for url_name in (
+            "admin:scheduling_match_changelist",
+            "admin:scheduling_matchassignmentsummary_changelist",
+        ):
+            response = self.client.get(reverse(url_name))
+            matches = list(response.context["cl"].result_list)
+            self.assertEqual(matches, [self.published, self.draft])
+            self.assertContains(response, "名单裁判3")
+
+            everything = self.client.get(reverse(url_name), {"when": "all"})
+            self.assertEqual(everything.context["cl"].result_count, 3)
+
+            past = self.client.get(reverse(url_name), {"when": "past"})
+            self.assertEqual(list(past.context["cl"].result_list), [self.past])
