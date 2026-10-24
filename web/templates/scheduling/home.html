@@ -80,6 +80,26 @@
     </section>
   {% endif %}
 
+  {% if pending_reports %}
+    <section class="card">
+      <div class="card-title"><h2>待提交的裁判报告</h2></div>
+      <ul class="item-list">
+        {% for report in pending_reports %}
+          <li>
+            <span class="item-title">
+              {{ report.match.kickoff_at|date:"n月j日 H:i" }}
+              {{ report.match.home_team }} vs {{ report.match.away_team }}
+            </span>
+            <span class="muted">{{ report.get_status_display }}</span>
+            <span class="item-links">
+              <a class="button-link small" href="{% url 'scheduling:report_edit' report.match_id %}">填写报告</a>
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
   {% if perms.scheduling.change_assignment %}
     <section class="card">
       <div class="card-title"><h2>待处理请假</h2></div>
@@ -139,6 +159,11 @@
             裁判工作量
           </a>
         {% endif %}
+
+        <a class="button-link secondary"
+           href="{% url 'scheduling:report_list' %}">
+          裁判报告
+        </a>
       </div>
 
     </section>
