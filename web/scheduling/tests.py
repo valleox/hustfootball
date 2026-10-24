@@ -764,7 +764,7 @@ class AssignmentPageTests(TestCase):
         )
 
     def test_overlapping_assignment_is_rejected(self):
-        other_match = self.create_other_match(1)
+        other_match = self.create_other_match(0.5)
         Assignment.objects.create(
             match=other_match,
             referee=self.referees[4],
@@ -777,7 +777,7 @@ class AssignmentPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "时间冲突")
-        self.assertContains(response, "冲突主队1 vs 冲突客队1")
+        self.assertContains(response, "冲突主队0.5 vs 冲突客队0.5")
         self.assertEqual(
             Assignment.objects.get(
                 match=self.match,
@@ -800,9 +800,40 @@ class AssignmentPageTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
 
+    def test_conflict_window_is_one_hour(self):
+        # 间隔不足 1 小时才算冲突；正好 1 小时或 1.5 小时都可以安排。
+        for hours_later in (1, 1.5, -1):
+            other_match = self.create_other_match(hours_later)
+            Assignment.objects.create(
+                match=other_match,
+                referee=self.referees[4],
+                position=Assignment.Position.REFEREE,
+            )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_conflict_just_under_one_hour_is_rejected(self):
+        other_match = self.create_other_match(-0.9)
+        Assignment.objects.create(
+            match=other_match,
+            referee=self.referees[4],
+            position=Assignment.Position.REFEREE,
+        )
+
+        response = self.post_assignments(
+            fourth_official=self.referees[4].pk,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "时间冲突")
+
     def test_cancelled_match_does_not_cause_conflict(self):
         other_match = self.create_other_match(
-            1,
+            0.5,
             status=Match.Status.CANCELLED,
         )
         Assignment.objects.create(
@@ -818,7 +849,7 @@ class AssignmentPageTests(TestCase):
         self.assertEqual(response.status_code, 302)
 
     def test_existing_conflict_does_not_block_other_changes(self):
-        other_match = self.create_other_match(1)
+        other_match = self.create_other_match(0.5)
         Assignment.objects.create(
             match=other_match,
             referee=self.referees[0],

@@ -118,7 +118,7 @@ class MatchForm(forms.ModelForm):
         return model.objects.filter(condition)
 
 # 同一裁判两场比赛的开球时间间隔小于此值时视为冲突。
-ASSIGNMENT_CONFLICT_WINDOW = timedelta(hours=2)
+ASSIGNMENT_CONFLICT_WINDOW = timedelta(hours=1)
 
 
 def find_time_conflicts(match, kickoff, referee_ids):
