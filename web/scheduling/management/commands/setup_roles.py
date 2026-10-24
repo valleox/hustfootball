@@ -50,6 +50,9 @@ class Command(BaseCommand):
             "change_assignment",
             "delete_assignment",
             "publish_assignments",
+            "view_refereereport",
+            "change_refereereport",
+            "delete_refereereport",
         }
 
         roles = {

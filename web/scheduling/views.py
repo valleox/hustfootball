@@ -1,3 +1,4 @@
+from datetime import timedelta
 from io import BytesIO
 from urllib.parse import quote
 
@@ -29,7 +30,10 @@ from .models import (
     Competition,
     Match,
     RefereeProfile,
+    RefereeReport,
 )
+from . import reports
+from .report_docx import build_report_docx, report_filename
 from .notifications import notify_assignment_removed, notify_leave_request
 from .publishing import (
     after_match_update,
@@ -49,6 +53,13 @@ def home(request):
         "unread_notifications": request.user.notifications.filter(
             read_at__isnull=True
         )[:5],
+        "pending_reports": RefereeReport.objects.filter(
+            author__user=request.user,
+        ).exclude(
+            status=RefereeReport.Status.SUBMITTED,
+        ).select_related(
+            "match__home_team", "match__away_team"
+        ).order_by("match__kickoff_at"),
     }
 
     try:
@@ -535,6 +546,33 @@ def match_detail(request, pk):
             }
         )
 
+    report = RefereeReport.objects.filter(match=match).select_related("author").first()
+    is_manager = reports.is_report_manager(request.user)
+    report_context = {
+        "report": report,
+        "can_edit_report": report is not None
+        and reports.can_edit_report(request.user, report),
+        "can_download_report": report is not None
+        and reports.can_download_report(request.user, report),
+        "can_start_report": report is None
+        and reports.report_start_problem(request.user, match) is None,
+        "report_request_form": (
+            reports.ReportRequestForm(
+                match=match,
+                initial={
+                    "author": match.assignments.order_by("position").first()
+                },
+            )
+            if is_manager
+            and match.assignment_status == Match.AssignmentStatus.PUBLISHED
+            and match.status != Match.Status.CANCELLED
+            and (report is None or not report.is_submitted)
+            else None
+        ),
+        "show_report_section": report is not None or is_manager
+        or reports.match_referee_profile(request.user, match) is not None,
+    }
+
     return render(
         request,
         "scheduling/match_detail.html",
@@ -542,6 +580,7 @@ def match_detail(request, pk):
             "match": match,
             "assignment_rows": assignment_rows,
             "can_view_assignments": can_view_assignments,
+            **report_context,
         },
     )
 
@@ -949,3 +988,182 @@ def admin_login_redirect(request):
     query = request.GET.copy()
     query.setdefault("next", reverse("admin:index"))
     return redirect(f"{reverse('login')}?{query.urlencode()}")
+
+
+# ---- 裁判报告 ----
+def _report_match(pk):
+    return get_object_or_404(
+        Match.objects.select_related(
+            "competition", "home_team", "away_team", "venue"
+        ),
+        pk=pk,
+    )
+
+
+@login_required
+def report_edit(request, pk):
+    match = _report_match(pk)
+    report = RefereeReport.objects.filter(match=match).select_related("author__user").first()
+
+    if report is None:
+        # 本场裁判在赛后自行开始填写，成为填写人。
+        problem = reports.report_start_problem(request.user, match)
+        if problem:
+            messages.error(request, problem)
+            return redirect("scheduling:match_detail", pk=match.pk)
+        report = reports.new_report(
+            match, reports.match_referee_profile(request.user, match)
+        )
+    elif not reports.can_edit_report(request.user, report):
+        raise PermissionDenied("只有填写裁判和排班管理员可以修改这份报告。")
+
+    submitting = request.method == "POST" and "submit" in request.POST
+    form = reports.RefereeReportForm(
+        request.POST if request.method == "POST" else None,
+        instance=report,
+        submitting=submitting,
+    )
+    formsets = reports.build_row_formsets(
+        report, request.POST if request.method == "POST" else None
+    )
+
+    if (
+        request.method == "POST"
+        and form.is_valid()
+        and all(formset.is_valid() for formset in formsets.values())
+    ):
+        report = form.save(commit=False)
+        reports.apply_row_formsets(report, formsets)
+        if submitting:
+            report.status = RefereeReport.Status.SUBMITTED
+            report.submitted_at = timezone.now()
+        elif report.status != RefereeReport.Status.SUBMITTED:
+            report.status = RefereeReport.Status.DRAFT
+        report.save()
+
+        if submitting:
+            reports.notify_report_submitted(request, report)
+            messages.success(request, "裁判报告已提交，已通知排班管理员。")
+            return redirect("scheduling:match_detail", pk=match.pk)
+        messages.success(request, "已保存。")
+        return redirect("scheduling:report_edit", pk=match.pk)
+
+    return render(
+        request,
+        "scheduling/report_form.html",
+        {
+            "match": match,
+            "report": report,
+            "form": form,
+            "row_sections": [
+                (key, label, formsets[key])
+                for key, label, _formset in reports.ROW_SECTIONS
+            ],
+        },
+    )
+
+
+@login_required
+@require_POST
+def report_request(request, pk):
+    if not reports.is_report_manager(request.user):
+        raise PermissionDenied("只有排班管理员可以发起裁判报告要求。")
+    match = _report_match(pk)
+    report = RefereeReport.objects.filter(match=match).first()
+
+    if report is not None and report.is_submitted:
+        messages.info(request, "本场裁判报告已经提交。")
+        return redirect("scheduling:match_detail", pk=match.pk)
+    if match.assignment_status != Match.AssignmentStatus.PUBLISHED:
+        messages.error(request, "请先发布本场裁判安排。")
+        return redirect("scheduling:match_detail", pk=match.pk)
+
+    form = reports.ReportRequestForm(request.POST, match=match)
+    if not form.is_valid():
+        messages.error(request, "请选择填写裁判。")
+        return redirect("scheduling:match_detail", pk=match.pk)
+
+    author = form.cleaned_data["author"].referee
+    if report is None:
+        report = reports.new_report(match, author, requested_by=request.user)
+    else:
+        report.author = author
+        report.status = RefereeReport.Status.REQUESTED
+        report.requested_by = request.user
+        report.requested_at = timezone.now()
+    report.save()
+    reports.notify_report_requested(request, report)
+    messages.success(request, f"已通知 {author.name} 提交裁判报告。")
+    return redirect("scheduling:match_detail", pk=match.pk)
+
+
+@login_required
+def report_download(request, pk):
+    report = get_object_or_404(
+        RefereeReport.objects.select_related(
+            "author",
+            "match__competition",
+            "match__home_team",
+            "match__away_team",
+            "match__venue",
+        ),
+        match_id=pk,
+    )
+    if not reports.can_download_report(request.user, report):
+        raise PermissionDenied("没有权限下载这份裁判报告。")
+
+    response = HttpResponse(
+        build_report_docx(report),
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
+    )
+    response["Content-Disposition"] = (
+        f"attachment; filename*=UTF-8''{quote(report_filename(report))}"
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@login_required
+def report_list(request):
+    """排班管理员看全部报告；裁判看自己负责的报告和可以补交的比赛。"""
+    manager = reports.is_report_manager(request.user)
+    queryset = RefereeReport.objects.select_related(
+        "author", "match__home_team", "match__away_team", "match__competition"
+    ).order_by("-match__kickoff_at")
+    if not manager:
+        queryset = queryset.filter(author__user=request.user)
+
+    status = request.GET.get("status", "")
+    if status in RefereeReport.Status.values:
+        queryset = queryset.filter(status=status)
+
+    startable = []
+    if not manager or hasattr(request.user, "referee_profile"):
+        # 最近两周本场执法、已开球、还没有报告的比赛，可以直接补交。
+        startable = (
+            Match.objects.filter(
+                assignments__referee__user=request.user,
+                assignment_status=Match.AssignmentStatus.PUBLISHED,
+                kickoff_at__lte=timezone.now(),
+                kickoff_at__gte=timezone.now() - timedelta(days=14),
+                report__isnull=True,
+            )
+            .exclude(status=Match.Status.CANCELLED)
+            .select_related("home_team", "away_team")
+            .order_by("-kickoff_at")
+        )
+
+    return render(
+        request,
+        "scheduling/report_list.html",
+        {
+            "reports": queryset,
+            "startable": startable,
+            "manager": manager,
+            "status_options": [("", "全部")] + list(RefereeReport.Status.choices),
+            "active_status": status if status in RefereeReport.Status.values else "",
+        },
+    )

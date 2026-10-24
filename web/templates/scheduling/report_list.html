@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}裁判报告 · {{ org_name }}{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="back-link">
+    <a class="button-link secondary small" href="{% url 'scheduling:home' %}">← 返回首页</a>
+  </p>
+  <h1>裁判报告</h1>
+  <p class="muted">
+    {% if manager %}
+      查看和下载各场比赛的裁判报告。要求裁判提交报告，请在比赛详情页操作。
+    {% else %}
+      填写你负责的裁判报告；赛后也可以直接为本人执法的比赛提交报告。
+    {% endif %}
+  </p>
+
+  {% if startable %}
+    <h2>可以提交报告的比赛</h2>
+    <ul class="item-list">
+      {% for match in startable %}
+        <li>
+          <span class="item-title">
+            {{ match.kickoff_at|date:"n月j日 H:i" }} {{ match.home_team }} vs {{ match.away_team }}
+          </span>
+          <span class="item-links">
+            <a class="button-link small" href="{% url 'scheduling:report_edit' match.pk %}">填写报告</a>
+          </span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <h2>{% if manager %}全部报告{% else %}我的报告{% endif %}</h2>
+  <nav class="filter-pills" aria-label="按状态筛选">
+    {% for value, label in status_options %}
+      <a class="pill {% if value == active_status %}active{% endif %}"
+         href="{% url 'scheduling:report_list' %}{% if value %}?status={{ value }}{% endif %}"
+         {% if value == active_status %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <ul class="item-list">
+    {% for report in reports %}
+      <li>
+        <span class="item-title">
+          {{ report.match.kickoff_at|date:"n月j日 H:i" }}
+          {{ report.match.home_team }} vs {{ report.match.away_team }}
+        </span>
+        <span class="muted">
+          {{ report.match.competition }} · 填写裁判：{{ report.author.name }}
+          · <span class="status-tag {% if report.is_submitted %}confirmed{% endif %}">{{ report.get_status_display }}</span>
+          {% if report.submitted_at %}· {{ report.submitted_at|date:"n月j日 H:i" }}提交{% endif %}
+        </span>
+        <span class="item-links">
+          {% if report.author.user_id == user.id or manager %}
+            <a class="button-link small" href="{% url 'scheduling:report_edit' report.match_id %}">
+              {% if report.is_submitted %}查看 / 修改{% else %}填写报告{% endif %}
+            </a>
+          {% endif %}
+          <a class="button-link secondary small" href="{% url 'scheduling:report_download' report.match_id %}">下载 Word</a>
+        </span>
+      </li>
+    {% empty %}
+      <li class="muted">暂无裁判报告。</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

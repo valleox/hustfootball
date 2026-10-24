@@ -495,6 +495,50 @@
       line-height: 1.4;
     }
     .help-text ul { margin: 4px 0 0; padding-left: 18px; }
+
+    /* ===== 裁判报告 ===== */
+    .report-form h3 { margin: 28px 0 10px; font-size: 19px; }
+    .score-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: end;
+      gap: 12px;
+    }
+    .score-row .form-field { margin-bottom: 0; }
+    .score-colon { padding-bottom: 10px; font-size: 24px; font-weight: 600; }
+    .row-table { min-width: 640px; }
+    .row-table th,
+    .row-table td { padding: 6px; }
+    .row-table td input,
+    .row-table td select { min-height: 38px; padding: 6px 10px; font-size: 15px; }
+    .row-table .field-number,
+    .row-table .field-minute { width: 110px; }
+    .row-table .field-team { width: 150px; }
+    .row-table .errorlist { margin: 4px 0 0; font-size: 12px; }
+    /* 手机上每一行改为卡片，免得左右滚动 */
+    @media (max-width: 720px) {
+      .row-table { min-width: 0; border: 0; background: none; }
+      .row-table thead { display: none; }
+      .row-table tr {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding: 12px;
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+      }
+      .row-table td { display: block; width: auto !important; padding: 0; border: 0; }
+      .row-table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ink-muted);
+        font-size: 12px;
+      }
+      .row-table .field-reason { grid-column: 1 / -1; }
+    }
     .errorlist {
       list-style: none;
       margin: 6px 0 0;

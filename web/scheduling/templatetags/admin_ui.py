@@ -6,6 +6,7 @@ register = template.Library()
 MODEL_TILES = {
     "scheduling.match": ("⚽", "录入比赛、批量发布裁判安排"),
     "scheduling.matchassignmentsummary": ("📋", "每场比赛一行，查看四个岗位的反馈"),
+    "scheduling.refereereport": ("📝", "裁判提交的赛后报告，可下载 Word"),
     "scheduling.refereeprofile": ("🧑‍⚖️", "裁判的姓名、等级与联系方式"),
     "scheduling.competition": ("🏆", "联赛、杯赛等赛事与赛季"),
     "scheduling.team": ("👕", "参赛的学院与球队"),

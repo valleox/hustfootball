@@ -43,6 +43,26 @@ urlpatterns = [
         name="assignment_publish",
     ),
     path(
+        "matches/<int:pk>/report/",
+        views.report_edit,
+        name="report_edit",
+    ),
+    path(
+        "matches/<int:pk>/report/request/",
+        views.report_request,
+        name="report_request",
+    ),
+    path(
+        "matches/<int:pk>/report/download/",
+        views.report_download,
+        name="report_download",
+    ),
+    path(
+        "reports/",
+        views.report_list,
+        name="report_list",
+    ),
+    path(
         "notifications/",
         views.notification_list,
         name="notification_list",
