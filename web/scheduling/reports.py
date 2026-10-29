@@ -110,6 +110,9 @@ class RefereeReportForm(forms.ModelForm):
             "competition_title",
             "home_score",
             "away_score",
+            "has_shootout",
+            "home_shootout_score",
+            "away_shootout_score",
             "winner",
             "sendoff_notes",
             "penalty_notes",
@@ -119,6 +122,8 @@ class RefereeReportForm(forms.ModelForm):
         widgets = {
             "home_score": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
             "away_score": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
+            "home_shootout_score": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
+            "away_shootout_score": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
             "sendoff_notes": forms.Textarea(attrs={"rows": 4, "placeholder": "没有红牌可留空"}),
             "penalty_notes": forms.Textarea(attrs={"rows": 4, "placeholder": "没有罚球点球可留空"}),
             "error_notes": forms.Textarea(attrs={"rows": 4, "placeholder": "没有可留空"}),
@@ -132,7 +137,10 @@ class RefereeReportForm(forms.ModelForm):
         match = self.instance.match
         self.fields["home_score"].label = f"{match.home_team}（主队）进球"
         self.fields["away_score"].label = f"{match.away_team}（客队）进球"
-        self.fields["winner"].help_text = "按比分自动填写；点球决胜等情况请注明，例如：公管（点球 4:3）"
+        self.fields["home_shootout_score"].label = f"{match.home_team} 点球罚进"
+        self.fields["away_shootout_score"].label = f"{match.away_team} 点球罚进"
+        self.fields["has_shootout"].label = "本场进入点球决胜"
+        self.fields["winner"].help_text = "留空时按比分（有点球决胜时按点球比分）自动填写"
 
     def clean(self):
         cleaned_data = super().clean()
@@ -145,13 +153,34 @@ class RefereeReportForm(forms.ModelForm):
             if not cleaned_data.get("summary", "").strip():
                 self.add_error("summary", "提交前请填写整场吹罚问题总结。")
 
-        # 未填获胜队时按 80 分钟比分自动填写；平局需裁判自己注明。
-        if not cleaned_data.get("winner") and home is not None and away is not None:
+        shootout = cleaned_data.get("has_shootout")
+        home_pk = cleaned_data.get("home_shootout_score")
+        away_pk = cleaned_data.get("away_shootout_score")
+        if shootout:
+            if home is not None and away is not None and home != away:
+                self.add_error("has_shootout", "80 分钟内已分出胜负，不需要点球决胜。")
+            if self.submitting:
+                if home_pk is None:
+                    self.add_error("home_shootout_score", "请填写点球比分。")
+                if away_pk is None:
+                    self.add_error("away_shootout_score", "请填写点球比分。")
+            if home_pk is not None and away_pk is not None and home_pk == away_pk:
+                self.add_error("away_shootout_score", "点球决胜必须分出胜负。")
+        else:
+            # 没有点球决胜时不保留残留的点球数据。
+            cleaned_data["home_shootout_score"] = None
+            cleaned_data["away_shootout_score"] = None
+
+        # 未填获胜队时自动填写：先看 80 分钟比分，平局再看点球比分。
+        if not cleaned_data.get("winner"):
             match = self.instance.match
-            if home > away:
-                cleaned_data["winner"] = team_name(match.home_team)
-            elif away > home:
-                cleaned_data["winner"] = team_name(match.away_team)
+            if shootout and home == away:
+                home, away = home_pk, away_pk
+            if home is not None and away is not None:
+                if home > away:
+                    cleaned_data["winner"] = team_name(match.home_team)
+                elif away > home:
+                    cleaned_data["winner"] = team_name(match.away_team)
         return cleaned_data
 
 
@@ -218,26 +247,53 @@ class GoalRowForm(_RowForm):
     )
 
 
+class ShootoutRowForm(_RowForm):
+    """点球决胜的一次罚球，按罚球顺序填写。"""
+
+    required_when_filled = ("team", "result")
+
+    team = forms.ChoiceField(label="队名", required=False)
+    number = forms.CharField(label="号码", max_length=10, required=False)
+    name = forms.CharField(label="队员姓名", max_length=30, required=False)
+    result = forms.ChoiceField(
+        label="结果",
+        required=False,
+        choices=[("", "—"), ("罚进", "罚进"), ("未进", "未进")],
+    )
+
+    def __init__(self, *args, team_choices=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["team"].choices = [("", "—")] + [(name, name) for name in team_choices]
+
+
 DisciplineFormSet = formset_factory(DisciplineRowForm, extra=0, max_num=40)
 GoalFormSet = formset_factory(GoalRowForm, extra=0, max_num=40)
+ShootoutFormSet = formset_factory(ShootoutRowForm, extra=0, max_num=60)
 
 # 新报告预留的空行数（页面上还可以「添加一行」）
-BLANK_ROWS = {"cautions": 2, "sendoffs": 1, "home_goals": 2, "away_goals": 2}
+BLANK_ROWS = {
+    "cautions": 2,
+    "sendoffs": 1,
+    "home_goals": 2,
+    "away_goals": 2,
+    "shootout_kicks": 10,
+}
 ROW_SECTIONS = (
     ("cautions", "警告队员", DisciplineFormSet),
     ("sendoffs", "罚令出场", DisciplineFormSet),
     ("home_goals", "主队进球队员", GoalFormSet),
     ("away_goals", "客队进球队员", GoalFormSet),
 )
+SHOOTOUT_SECTION = ("shootout_kicks", "点球决胜罚球记录（按罚球顺序）", ShootoutFormSet)
 
 
 def build_row_formsets(report, data=None):
     match = report.match
     team_choices = (team_name(match.home_team), team_name(match.away_team))
     formsets = {}
-    for key, _label, formset_class in ROW_SECTIONS:
+    for key, _label, formset_class in (*ROW_SECTIONS, SHOOTOUT_SECTION):
         kwargs = {"prefix": key}
-        if formset_class is DisciplineFormSet:
+        if formset_class in (DisciplineFormSet, ShootoutFormSet):
             kwargs["form_kwargs"] = {"team_choices": team_choices}
         if data is None:
             rows = list(getattr(report, key) or [])
@@ -249,8 +305,20 @@ def build_row_formsets(report, data=None):
     return formsets
 
 
+def formsets_to_validate(formsets, data):
+    """没有勾选点球决胜时，隐藏的罚球记录不参与校验。"""
+    return [
+        formset
+        for key, formset in formsets.items()
+        if key != SHOOTOUT_SECTION[0] or data.get("has_shootout")
+    ]
+
+
 def apply_row_formsets(report, formsets):
     for key, formset in formsets.items():
+        if key == SHOOTOUT_SECTION[0] and not report.has_shootout:
+            report.shootout_kicks = []
+            continue
         setattr(
             report,
             key,

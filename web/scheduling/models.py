@@ -465,6 +465,10 @@ class RefereeReport(TimeStampedModel):
         blank=True,
         help_text="点球决胜等情况请注明，例如：公管（点球 4:3）",
     )
+    has_shootout = models.BooleanField("点球决胜", default=False)
+    home_shootout_score = models.PositiveSmallIntegerField("主队点球罚进", null=True, blank=True)
+    away_shootout_score = models.PositiveSmallIntegerField("客队点球罚进", null=True, blank=True)
+    shootout_kicks = models.JSONField("点球决胜罚球队员", default=list, blank=True)
     cautions = models.JSONField("警告队员", default=list, blank=True)
     sendoffs = models.JSONField("罚令出场", default=list, blank=True)
     home_goals = models.JSONField("主队进球队员", default=list, blank=True)

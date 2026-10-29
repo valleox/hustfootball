@@ -20,6 +20,7 @@ ROW_HEIGHT = Cm(0.9)
 TEXT_WIDTH = Cm(21 - 3.175 * 2)
 # 警告、罚令出场表的列宽：队名、号码、姓名、时间、原因
 DISCIPLINE_WIDTHS = [Cm(2.3), Cm(1.5), Cm(2.2), Cm(1.6), Cm(7.05)]
+SHOOTOUT_WIDTHS = [Cm(1.6), Cm(3.6), Cm(2.4), Cm(4.0), Cm(3.05)]
 ASSETS = Path(__file__).resolve().parent / "report_assets"
 
 
@@ -197,15 +198,14 @@ def build_report_docx(report):
         ],
     )
     _line(document, [("4，比赛地点：", False), (match.venue.name, True)])
-    _line(
-        document,
-        [
-            ("5，比赛结果：80分钟内比分：", False),
-            (score, True),
-            ("      获胜队：", False),
-            (report.winner, True),
-        ],
-    )
+    result = [("5，比赛结果：80分钟内比分：", False), (score, True)]
+    if report.has_shootout:
+        shootout_score = ""
+        if report.home_shootout_score is not None and report.away_shootout_score is not None:
+            shootout_score = f"{report.home_shootout_score}:{report.away_shootout_score}"
+        result += [("    点球决胜：", False), (shootout_score, True)]
+    result += [("      获胜队：", False), (report.winner, True)]
+    _line(document, result)
 
     _heading(document, "警告队员")
     _grid_table(
@@ -249,6 +249,18 @@ def build_report_docx(report):
             _cell_text(goals.cell(2 + index, offset), row.get("name"))
             _cell_text(goals.cell(2 + index, offset + 1), row.get("number"))
             _cell_text(goals.cell(2 + index, offset + 2), _minute(row.get("minute")))
+
+    if report.has_shootout:
+        _heading(document, "点球决胜")
+        _grid_table(
+            document,
+            ["顺序", "队名", "号码", "队员姓名", "结果"],
+            (
+                [index, row.get("team"), row.get("number"), row.get("name"), row.get("result")]
+                for index, row in enumerate(report.shootout_kicks, start=1)
+            ),
+            SHOOTOUT_WIDTHS,
+        )
 
     _heading(document, "红牌情况说明（如本页不够请另附页说明）")
     _notes_box(document, report.sendoff_notes)

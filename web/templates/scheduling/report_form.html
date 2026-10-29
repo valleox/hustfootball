@@ -45,6 +45,32 @@
       </div>
     </div>
     <p class="muted">比分按 80 分钟内计算。</p>
+
+    <div class="form-field">
+      <label class="checkbox-label" for="{{ form.has_shootout.id_for_label }}">
+        {{ form.has_shootout }} {{ form.has_shootout.label }}
+      </label>
+      {{ form.has_shootout.errors }}
+    </div>
+    <div class="shootout-block" data-shootout {% if not form.has_shootout.value %}hidden{% endif %}>
+      <div class="score-row">
+        <div class="form-field">
+          <label for="{{ form.home_shootout_score.id_for_label }}">{{ form.home_shootout_score.label }}</label>
+          {{ form.home_shootout_score }}
+          {{ form.home_shootout_score.errors }}
+        </div>
+        <span class="score-colon" aria-hidden="true">:</span>
+        <div class="form-field">
+          <label for="{{ form.away_shootout_score.id_for_label }}">{{ form.away_shootout_score.label }}</label>
+          {{ form.away_shootout_score }}
+          {{ form.away_shootout_score.errors }}
+        </div>
+      </div>
+      {% with key=shootout_section.0 label=shootout_section.1 formset=shootout_section.2 %}
+        {% include "scheduling/_report_rows.html" %}
+      {% endwith %}
+    </div>
+
     <div class="form-field">
       <label for="{{ form.winner.id_for_label }}">{{ form.winner.label }}</label>
       {{ form.winner }}
@@ -53,35 +79,7 @@
     </div>
 
     {% for key, label, formset in row_sections %}
-      <h3>{{ label }}</h3>
-      {{ formset.management_form }}
-      {{ formset.non_form_errors }}
-      <div class="table-scroll">
-        <table class="row-table">
-          <thead>
-            <tr>
-              {% for field in formset.empty_form.visible_fields %}<th>{{ field.label }}</th>{% endfor %}
-            </tr>
-          </thead>
-          <tbody data-rows="{{ key }}">
-            {% for row in formset %}
-              <tr>
-                {% for field in row.visible_fields %}
-                  <td class="field-{{ field.name }}" data-label="{{ field.label }}">{{ field }}{{ field.errors }}</td>
-                {% endfor %}
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      <template data-empty-row="{{ key }}">
-        <tr>
-          {% for field in formset.empty_form.visible_fields %}
-            <td class="field-{{ field.name }}" data-label="{{ field.label }}">{{ field }}</td>
-          {% endfor %}
-        </tr>
-      </template>
-      <p><button type="button" class="secondary small" data-add-row="{{ key }}">＋ 添加一行</button></p>
+      {% include "scheduling/_report_rows.html" %}
     {% endfor %}
     <p class="muted">不需要的行留空即可，导出时会自动忽略。</p>
 
@@ -117,5 +115,14 @@
       total.value = parseInt(total.value, 10) + 1;
     });
   });
+
+  // 勾选「点球决胜」后才显示点球比分和罚球记录。
+  (function () {
+    var checkbox = document.getElementById("{{ form.has_shootout.id_for_label }}");
+    var block = document.querySelector("[data-shootout]");
+    checkbox.addEventListener("change", function () {
+      block.hidden = !checkbox.checked;
+    });
+  })();
 </script>
 {% endblock %}

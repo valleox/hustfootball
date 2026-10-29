@@ -506,6 +506,23 @@
     }
     .score-row .form-field { margin-bottom: 0; }
     .score-colon { padding-bottom: 10px; font-size: 24px; font-weight: 600; }
+    .checkbox-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .checkbox-label input { width: 20px; height: 20px; min-height: 0; margin: 0; }
+    .shootout-block {
+      margin: 0 0 18px;
+      padding: 16px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+    }
+    .shootout-block[hidden] { display: none; }
+    .shootout-block h3 { margin-top: 12px; }
     .row-table { min-width: 640px; }
     .row-table th,
     .row-table td { padding: 6px; }

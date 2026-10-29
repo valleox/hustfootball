@@ -3220,6 +3220,95 @@ class RefereeReportTests(TestCase):
             self.client.force_login(user)
             self.assertEqual(self.client.get(self.url("report_download")).status_code, status)
 
+    # ---- 点球决胜 ----
+    def shootout_data(self, **overrides):
+        data = self.report_data(
+            home_score="1",
+            away_score="1",
+            has_shootout="on",
+            home_shootout_score="4",
+            away_shootout_score="3",
+            **{
+                "away_goals-1-name": "",
+                "away_goals-1-number": "",
+                "away_goals-1-minute": "",
+                "shootout_kicks-TOTAL_FORMS": "3",
+                "shootout_kicks-INITIAL_FORMS": "0",
+                "shootout_kicks-0-team": "软件",
+                "shootout_kicks-0-number": "9",
+                "shootout_kicks-0-name": "张三",
+                "shootout_kicks-0-result": "罚进",
+                "shootout_kicks-1-team": "公管",
+                "shootout_kicks-1-number": "10",
+                "shootout_kicks-1-name": "黄晗睿",
+                "shootout_kicks-1-result": "未进",
+            },
+        )
+        data.update(overrides)
+        return data
+
+    def test_shootout_is_recorded_and_exported(self):
+        from docx import Document
+
+        self.client.force_login(self.referees[0].user)
+        response = self.client.post(self.url("report_edit"), {**self.shootout_data(), "submit": ""})
+
+        self.assertRedirects(response, self.url("match_detail"))
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertTrue(report.has_shootout)
+        self.assertEqual((report.home_shootout_score, report.away_shootout_score), (4, 3))
+        self.assertEqual(report.winner, "软件")  # 按点球比分自动填写
+        self.assertEqual(len(report.shootout_kicks), 2)
+        self.assertEqual(report.shootout_kicks[1]["result"], "未进")
+
+        document = Document(BytesIO(self.client.get(self.url("report_download")).content))
+        text = "\n".join(p.text for p in document.paragraphs)
+        self.assertIn("80分钟内比分：1:1    点球决胜：4:3      获胜队：软件", text)
+        self.assertIn("点球决胜", [p.text for p in document.paragraphs])
+        kicks = document.tables[4]
+        self.assertEqual(
+            [cell.text for cell in kicks.rows[2].cells],
+            ["2", "公管", "10", "黄晗睿", "未进"],
+        )
+
+    def test_shootout_requires_draw_and_a_winner(self):
+        self.client.force_login(self.referees[0].user)
+
+        not_a_draw = self.client.post(
+            self.url("report_edit"), {**self.shootout_data(home_score="2"), "submit": ""}
+        )
+        tied = self.client.post(
+            self.url("report_edit"),
+            {**self.shootout_data(away_shootout_score="4"), "submit": ""},
+        )
+        missing = self.client.post(
+            self.url("report_edit"),
+            {**self.shootout_data(home_shootout_score=""), "submit": ""},
+        )
+
+        self.assertContains(not_a_draw, "不需要点球决胜")
+        self.assertContains(tied, "点球决胜必须分出胜负")
+        self.assertContains(missing, "请填写点球比分")
+        self.assertFalse(RefereeReport.objects.exists())
+
+    def test_unchecked_shootout_ignores_hidden_rows(self):
+        from docx import Document
+
+        self.client.force_login(self.referees[0].user)
+        data = self.shootout_data(home_score="1", away_score="2")
+        del data["has_shootout"]
+        data["shootout_kicks-2-name"] = "只填了名字"  # 隐藏区域里的残留输入
+
+        response = self.client.post(self.url("report_edit"), {**data, "submit": ""})
+
+        self.assertRedirects(response, self.url("match_detail"))
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertFalse(report.has_shootout)
+        self.assertIsNone(report.home_shootout_score)
+        self.assertEqual(report.shootout_kicks, [])
+        document = Document(BytesIO(self.client.get(self.url("report_download")).content))
+        self.assertNotIn("点球决胜", "\n".join(p.text for p in document.paragraphs))
+
     def test_report_list_and_admin_action(self):
         admin_user = get_user_model().objects.create_superuser(
             "rp-admin", "rp-admin@example.test", "Rp-pass-2026!"

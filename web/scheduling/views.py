@@ -1030,7 +1030,10 @@ def report_edit(request, pk):
     if (
         request.method == "POST"
         and form.is_valid()
-        and all(formset.is_valid() for formset in formsets.values())
+        and all(
+            formset.is_valid()
+            for formset in reports.formsets_to_validate(formsets, request.POST)
+        )
     ):
         report = form.save(commit=False)
         reports.apply_row_formsets(report, formsets)
@@ -1059,6 +1062,11 @@ def report_edit(request, pk):
                 (key, label, formsets[key])
                 for key, label, _formset in reports.ROW_SECTIONS
             ],
+            "shootout_section": (
+                reports.SHOOTOUT_SECTION[0],
+                reports.SHOOTOUT_SECTION[1],
+                formsets[reports.SHOOTOUT_SECTION[0]],
+            ),
         },
     )
 
