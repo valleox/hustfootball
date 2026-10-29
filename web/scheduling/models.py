@@ -456,19 +456,19 @@ class RefereeReport(TimeStampedModel):
     requested_at = models.DateTimeField("发起时间", null=True, blank=True)
     submitted_at = models.DateTimeField("提交时间", null=True, blank=True)
 
-    competition_title = models.CharField("比赛名称", max_length=100, blank=True)
+    class Winner(models.TextChoices):
+        HOME = "home", "主队"
+        AWAY = "away", "客队"
+        DRAW = "draw", "平局"
+
     home_score = models.PositiveSmallIntegerField("主队进球（80分钟内）", null=True, blank=True)
     away_score = models.PositiveSmallIntegerField("客队进球（80分钟内）", null=True, blank=True)
-    winner = models.CharField(
-        "获胜队",
-        max_length=100,
-        blank=True,
-        help_text="点球决胜等情况请注明，例如：公管（点球 4:3）",
-    )
+    winner = models.CharField("获胜队", max_length=10, choices=Winner.choices, blank=True)
     has_shootout = models.BooleanField("点球决胜", default=False)
     home_shootout_score = models.PositiveSmallIntegerField("主队点球罚进", null=True, blank=True)
     away_shootout_score = models.PositiveSmallIntegerField("客队点球罚进", null=True, blank=True)
-    shootout_kicks = models.JSONField("点球决胜罚球队员", default=list, blank=True)
+    # 每轮一行：主队罚球队员在左、客队在右
+    shootout_kicks = models.JSONField("点球决胜罚球记录", default=list, blank=True)
     cautions = models.JSONField("警告队员", default=list, blank=True)
     sendoffs = models.JSONField("罚令出场", default=list, blank=True)
     home_goals = models.JSONField("主队进球队员", default=list, blank=True)
@@ -489,6 +489,16 @@ class RefereeReport(TimeStampedModel):
     @property
     def is_submitted(self):
         return self.status == self.Status.SUBMITTED
+
+    def winner_label(self):
+        """报告中显示的获胜队：球队简称或「平局」。"""
+        if self.winner == self.Winner.HOME:
+            team = self.match.home_team
+        elif self.winner == self.Winner.AWAY:
+            team = self.match.away_team
+        else:
+            return self.get_winner_display()
+        return team.short_name or team.name
 
 
 class MatchAssignmentSummary(Match):

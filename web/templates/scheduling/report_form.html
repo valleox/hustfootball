@@ -25,12 +25,7 @@
     {{ form.non_field_errors }}
 
     <h3>比赛基本信息</h3>
-    <div class="form-field">
-      <label for="{{ form.competition_title.id_for_label }}">{{ form.competition_title.label }}</label>
-      {{ form.competition_title }}
-      <div class="help-text">{{ form.competition_title.help_text }}</div>
-      {{ form.competition_title.errors }}
-    </div>
+    <p>比赛名称：{{ match.competition.name }}</p>
     <div class="score-row">
       <div class="form-field">
         <label for="{{ form.home_score.id_for_label }}">{{ form.home_score.label }}</label>
@@ -66,15 +61,14 @@
           {{ form.away_shootout_score.errors }}
         </div>
       </div>
-      {% with key=shootout_section.0 label=shootout_section.1 formset=shootout_section.2 %}
-        {% include "scheduling/_report_rows.html" %}
+      {% with key=shootout_section.0 label=shootout_section.1 formset=shootout_section.2 home_team=match.home_team away_team=match.away_team %}
+        {% include "scheduling/_report_shootout.html" %}
       {% endwith %}
     </div>
 
     <div class="form-field">
-      <label for="{{ form.winner.id_for_label }}">{{ form.winner.label }}</label>
+      <label>{{ form.winner.label }}</label>
       {{ form.winner }}
-      <div class="help-text">{{ form.winner.help_text }}</div>
       {{ form.winner.errors }}
     </div>
 

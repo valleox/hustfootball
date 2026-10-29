@@ -3036,7 +3036,6 @@ class RefereeReportTests(TestCase):
 
     def report_data(self, **overrides):
         data = {
-            "competition_title": "2026年华中科技大学足球联赛（乙组）",
             "home_score": "1",
             "away_score": "2",
             "winner": "",
@@ -3093,7 +3092,7 @@ class RefereeReportTests(TestCase):
         report = RefereeReport.objects.get(match=self.match)
         self.assertEqual(report.author, self.referees[0])
         self.assertEqual(report.status, RefereeReport.Status.SUBMITTED)
-        self.assertEqual(report.winner, "公管")  # 按比分自动填写
+        self.assertEqual(report.winner, RefereeReport.Winner.AWAY)  # 未选时按比分自动填写
         self.assertEqual(len(report.cautions), 2)  # 空行被忽略
         self.assertEqual(report.cautions[0]["name"], "袁鼎")
         self.assertEqual(len(report.away_goals), 2)
@@ -3234,14 +3233,14 @@ class RefereeReportTests(TestCase):
                 "away_goals-1-minute": "",
                 "shootout_kicks-TOTAL_FORMS": "3",
                 "shootout_kicks-INITIAL_FORMS": "0",
-                "shootout_kicks-0-team": "软件",
-                "shootout_kicks-0-number": "9",
-                "shootout_kicks-0-name": "张三",
-                "shootout_kicks-0-result": "罚进",
-                "shootout_kicks-1-team": "公管",
-                "shootout_kicks-1-number": "10",
-                "shootout_kicks-1-name": "黄晗睿",
-                "shootout_kicks-1-result": "未进",
+                "shootout_kicks-0-home_number": "9",
+                "shootout_kicks-0-home_name": "张三",
+                "shootout_kicks-0-home_result": "罚进",
+                "shootout_kicks-0-away_number": "10",
+                "shootout_kicks-0-away_name": "黄晗睿",
+                "shootout_kicks-0-away_result": "未进",
+                "shootout_kicks-1-home_number": "7",
+                "shootout_kicks-1-home_result": "罚进",
             },
         )
         data.update(overrides)
@@ -3257,18 +3256,20 @@ class RefereeReportTests(TestCase):
         report = RefereeReport.objects.get(match=self.match)
         self.assertTrue(report.has_shootout)
         self.assertEqual((report.home_shootout_score, report.away_shootout_score), (4, 3))
-        self.assertEqual(report.winner, "软件")  # 按点球比分自动填写
+        self.assertEqual(report.winner, RefereeReport.Winner.HOME)  # 按点球比分自动填写
         self.assertEqual(len(report.shootout_kicks), 2)
-        self.assertEqual(report.shootout_kicks[1]["result"], "未进")
+        self.assertEqual(report.shootout_kicks[0]["away_result"], "未进")
+        self.assertEqual(report.shootout_kicks[1]["away_result"], "")
 
         document = Document(BytesIO(self.client.get(self.url("report_download")).content))
         text = "\n".join(p.text for p in document.paragraphs)
         self.assertIn("80分钟内比分：1:1    点球决胜：4:3      获胜队：软件", text)
         self.assertIn("点球决胜", [p.text for p in document.paragraphs])
         kicks = document.tables[4]
+        self.assertIn("主队（软件）", kicks.rows[0].cells[1].text)
         self.assertEqual(
             [cell.text for cell in kicks.rows[2].cells],
-            ["2", "公管", "10", "黄晗睿", "未进"],
+            ["1", "9", "张三", "罚进", "10", "黄晗睿", "未进"],
         )
 
     def test_shootout_requires_draw_and_a_winner(self):
@@ -3297,7 +3298,7 @@ class RefereeReportTests(TestCase):
         self.client.force_login(self.referees[0].user)
         data = self.shootout_data(home_score="1", away_score="2")
         del data["has_shootout"]
-        data["shootout_kicks-2-name"] = "只填了名字"  # 隐藏区域里的残留输入
+        data["shootout_kicks-2-home_name"] = "只填了名字"  # 隐藏区域里的残留输入
 
         response = self.client.post(self.url("report_edit"), {**data, "submit": ""})
 
@@ -3308,6 +3309,35 @@ class RefereeReportTests(TestCase):
         self.assertEqual(report.shootout_kicks, [])
         document = Document(BytesIO(self.client.get(self.url("report_download")).content))
         self.assertNotIn("点球决胜", "\n".join(p.text for p in document.paragraphs))
+
+    def test_new_report_form_starts_empty(self):
+        self.client.force_login(self.referees[0].user)
+
+        response = self.client.get(self.url("report_edit"))
+
+        form = response.context["form"]
+        self.assertIsNone(form["home_score"].value())
+        self.assertFalse(form["winner"].value())
+        self.assertNotRegex(response.content.decode(), r"<input[^>]*checked")
+        self.assertNotContains(response, 'name="competition_title"')
+        self.assertContains(response, "比赛名称：2026年华中科技大学足球联赛（乙组）")
+        self.assertEqual(response.context["shootout_section"][2].total_form_count(), 3)
+
+    def test_winner_must_match_score(self):
+        self.client.force_login(self.referees[0].user)
+
+        wrong = self.client.post(
+            self.url("report_edit"), {**self.report_data(winner="home"), "submit": ""}
+        )
+        draw = self.client.post(
+            self.url("report_edit"),
+            {**self.report_data(home_score="2", away_score="2", winner="draw"), "submit": ""},
+        )
+
+        self.assertContains(wrong, "与比分不符")
+        self.assertRedirects(draw, self.url("match_detail"))
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertEqual(report.winner_label(), "平局")
 
     def test_report_list_and_admin_action(self):
         admin_user = get_user_model().objects.create_superuser(

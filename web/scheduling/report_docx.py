@@ -20,7 +20,8 @@ ROW_HEIGHT = Cm(0.9)
 TEXT_WIDTH = Cm(21 - 3.175 * 2)
 # 警告、罚令出场表的列宽：队名、号码、姓名、时间、原因
 DISCIPLINE_WIDTHS = [Cm(2.3), Cm(1.5), Cm(2.2), Cm(1.6), Cm(7.05)]
-SHOOTOUT_WIDTHS = [Cm(1.6), Cm(3.6), Cm(2.4), Cm(4.0), Cm(3.05)]
+# 点球决胜表的列宽：轮次，主队号码/姓名/结果，客队号码/姓名/结果
+SHOOTOUT_WIDTHS = [Cm(1.45)] + [Cm(1.6), Cm(3.0), Cm(2.0)] * 2
 ASSETS = Path(__file__).resolve().parent / "report_assets"
 
 
@@ -169,7 +170,7 @@ def build_report_docx(report):
     if report.home_score is not None and report.away_score is not None:
         score = f"{report.home_score}:{report.away_score}"
 
-    _line(document, [("1，比赛名称：", False), (report.competition_title or match.competition.name, True)])
+    _line(document, [("1，比赛名称：", False), (match.competition.name, True)])
     _line(
         document,
         [
@@ -204,7 +205,7 @@ def build_report_docx(report):
         if report.home_shootout_score is not None and report.away_shootout_score is not None:
             shootout_score = f"{report.home_shootout_score}:{report.away_shootout_score}"
         result += [("    点球决胜：", False), (shootout_score, True)]
-    result += [("      获胜队：", False), (report.winner, True)]
+    result += [("      获胜队：", False), (report.winner_label(), True)]
     _line(document, result)
 
     _heading(document, "警告队员")
@@ -252,15 +253,29 @@ def build_report_docx(report):
 
     if report.has_shootout:
         _heading(document, "点球决胜")
-        _grid_table(
-            document,
-            ["顺序", "队名", "号码", "队员姓名", "结果"],
-            (
-                [index, row.get("team"), row.get("number"), row.get("name"), row.get("result")]
-                for index, row in enumerate(report.shootout_kicks, start=1)
-            ),
-            SHOOTOUT_WIDTHS,
-        )
+        rounds = report.shootout_kicks or [{}]
+        kicks = document.add_table(rows=2 + len(rounds), cols=7)
+        kicks.style = "Table Grid"
+        kicks.alignment = WD_TABLE_ALIGNMENT.CENTER
+        kicks.cell(0, 0).merge(kicks.cell(1, 0))
+        kicks.cell(0, 1).merge(kicks.cell(0, 3))
+        kicks.cell(0, 4).merge(kicks.cell(0, 6))
+        _cell_text(kicks.cell(0, 0), "轮次")
+        _cell_text(kicks.cell(0, 1), f"主队（{home}）")
+        _cell_text(kicks.cell(0, 4), f"客队（{away}）")
+        for column, header in enumerate(["号码", "姓名", "结果"] * 2, start=1):
+            _cell_text(kicks.cell(1, column), header)
+        for index, row in enumerate(rounds, start=1):
+            values = [index if row else ""] + [
+                row.get(f"{side}_{name}")
+                for side in ("home", "away")
+                for name in ("number", "name", "result")
+            ]
+            for column, value in enumerate(values):
+                _cell_text(kicks.cell(1 + index, column), value)
+        for row in kicks.rows:
+            row.height = ROW_HEIGHT
+        _set_widths(kicks, SHOOTOUT_WIDTHS)
 
     _heading(document, "红牌情况说明（如本页不够请另附页说明）")
     _notes_box(document, report.sendoff_notes)

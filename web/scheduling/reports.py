@@ -107,7 +107,6 @@ class RefereeReportForm(forms.ModelForm):
     class Meta:
         model = RefereeReport
         fields = (
-            "competition_title",
             "home_score",
             "away_score",
             "has_shootout",
@@ -128,8 +127,8 @@ class RefereeReportForm(forms.ModelForm):
             "penalty_notes": forms.Textarea(attrs={"rows": 4, "placeholder": "没有罚球点球可留空"}),
             "error_notes": forms.Textarea(attrs={"rows": 4, "placeholder": "没有可留空"}),
             "summary": forms.Textarea(attrs={"rows": 5}),
+            "winner": forms.RadioSelect(attrs={"class": "choice-buttons"}),
         }
-        help_texts = {"competition_title": "例如：2026年华中科技大学足球联赛（乙组）"}
 
     def __init__(self, *args, submitting=False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -140,7 +139,11 @@ class RefereeReportForm(forms.ModelForm):
         self.fields["home_shootout_score"].label = f"{match.home_team} 点球罚进"
         self.fields["away_shootout_score"].label = f"{match.away_team} 点球罚进"
         self.fields["has_shootout"].label = "本场进入点球决胜"
-        self.fields["winner"].help_text = "留空时按比分（有点球决胜时按点球比分）自动填写"
+        self.fields["winner"].choices = [
+            (RefereeReport.Winner.HOME, f"{team_name(match.home_team)}（主队）"),
+            (RefereeReport.Winner.AWAY, f"{team_name(match.away_team)}（客队）"),
+            (RefereeReport.Winner.DRAW, "平局"),
+        ]
 
     def clean(self):
         cleaned_data = super().clean()
@@ -171,17 +174,31 @@ class RefereeReportForm(forms.ModelForm):
             cleaned_data["home_shootout_score"] = None
             cleaned_data["away_shootout_score"] = None
 
-        # 未填获胜队时自动填写：先看 80 分钟比分，平局再看点球比分。
-        if not cleaned_data.get("winner"):
-            match = self.instance.match
-            if shootout and home == away:
-                home, away = home_pk, away_pk
-            if home is not None and away is not None:
-                if home > away:
-                    cleaned_data["winner"] = team_name(match.home_team)
-                elif away > home:
-                    cleaned_data["winner"] = team_name(match.away_team)
+        # 获胜队必须与比分一致：先看 80 分钟比分，平局再看点球比分。
+        expected = self._expected_winner(home, away, shootout, home_pk, away_pk)
+        winner = cleaned_data.get("winner")
+        if not winner and expected:
+            cleaned_data["winner"] = expected
+        elif winner and expected and winner != expected:
+            self.add_error(
+                "winner",
+                f"与比分不符，按比分获胜队应为「{dict(self.fields['winner'].choices)[expected]}」。",
+            )
+        elif self.submitting and not winner:
+            self.add_error("winner", "请选择获胜队。")
         return cleaned_data
+
+    @staticmethod
+    def _expected_winner(home, away, shootout, home_pk, away_pk):
+        if home is None or away is None:
+            return None
+        if home != away:
+            return RefereeReport.Winner.HOME if home > away else RefereeReport.Winner.AWAY
+        if not shootout:
+            return RefereeReport.Winner.DRAW
+        if home_pk is None or away_pk is None or home_pk == away_pk:
+            return None
+        return RefereeReport.Winner.HOME if home_pk > away_pk else RefereeReport.Winner.AWAY
 
 
 class _RowForm(forms.Form):
@@ -247,23 +264,29 @@ class GoalRowForm(_RowForm):
     )
 
 
+SHOOTOUT_RESULTS = [("", "—"), ("罚进", "罚进"), ("未进", "未进")]
+
+
 class ShootoutRowForm(_RowForm):
-    """点球决胜的一次罚球，按罚球顺序填写。"""
+    """点球决胜的一轮：主队罚球队员在左、客队在右；某一方没罚可留空。"""
 
-    required_when_filled = ("team", "result")
+    home_number = forms.CharField(label="主队号码", max_length=10, required=False)
+    home_name = forms.CharField(label="主队姓名", max_length=30, required=False)
+    home_result = forms.ChoiceField(label="主队结果", required=False, choices=SHOOTOUT_RESULTS)
+    away_number = forms.CharField(label="客队号码", max_length=10, required=False)
+    away_name = forms.CharField(label="客队姓名", max_length=30, required=False)
+    away_result = forms.ChoiceField(label="客队结果", required=False, choices=SHOOTOUT_RESULTS)
 
-    team = forms.ChoiceField(label="队名", required=False)
-    number = forms.CharField(label="号码", max_length=10, required=False)
-    name = forms.CharField(label="队员姓名", max_length=30, required=False)
-    result = forms.ChoiceField(
-        label="结果",
-        required=False,
-        choices=[("", "—"), ("罚进", "罚进"), ("未进", "未进")],
-    )
-
-    def __init__(self, *args, team_choices=(), **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["team"].choices = [("", "—")] + [(name, name) for name in team_choices]
+    def clean(self):
+        cleaned_data = super().clean()
+        for side in ("home", "away"):
+            filled = any(
+                str(cleaned_data.get(f"{side}_{name}") or "").strip()
+                for name in ("number", "name")
+            )
+            if filled and not cleaned_data.get(f"{side}_result"):
+                self.add_error(f"{side}_result", "必填")
+        return cleaned_data
 
 
 DisciplineFormSet = formset_factory(DisciplineRowForm, extra=0, max_num=40)
@@ -276,7 +299,7 @@ BLANK_ROWS = {
     "sendoffs": 1,
     "home_goals": 2,
     "away_goals": 2,
-    "shootout_kicks": 10,
+    "shootout_kicks": 3,
 }
 ROW_SECTIONS = (
     ("cautions", "警告队员", DisciplineFormSet),
@@ -284,7 +307,7 @@ ROW_SECTIONS = (
     ("home_goals", "主队进球队员", GoalFormSet),
     ("away_goals", "客队进球队员", GoalFormSet),
 )
-SHOOTOUT_SECTION = ("shootout_kicks", "点球决胜罚球记录（按罚球顺序）", ShootoutFormSet)
+SHOOTOUT_SECTION = ("shootout_kicks", "点球决胜罚球记录（每行一轮）", ShootoutFormSet)
 
 
 def build_row_formsets(report, data=None):
@@ -293,7 +316,7 @@ def build_row_formsets(report, data=None):
     formsets = {}
     for key, _label, formset_class in (*ROW_SECTIONS, SHOOTOUT_SECTION):
         kwargs = {"prefix": key}
-        if formset_class in (DisciplineFormSet, ShootoutFormSet):
+        if formset_class is DisciplineFormSet:
             kwargs["form_kwargs"] = {"team_choices": team_choices}
         if data is None:
             rows = list(getattr(report, key) or [])
@@ -327,11 +350,7 @@ def apply_row_formsets(report, formsets):
 
 
 def new_report(match, author, *, requested_by=None):
-    report = RefereeReport(
-        match=match,
-        author=author,
-        competition_title=match.competition.name,
-    )
+    report = RefereeReport(match=match, author=author)
     if requested_by is not None:
         report.status = RefereeReport.Status.REQUESTED
         report.requested_by = requested_by
