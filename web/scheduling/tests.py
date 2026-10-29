@@ -25,6 +25,7 @@ from .models import (
     Notification,
     Match,
     RefereeProfile,
+    RefereeReport,
     Team,
     Venue,
 )
@@ -2478,7 +2479,7 @@ class FeedbackRoundThreeTests(TestCase):
         actions = actions[:actions.index("</section>")]
 
         self.assertIn('class="form-actions"', actions)
-        self.assertEqual(actions.count('class="button-link'), 3)
+        self.assertEqual(actions.count('class="button-link'), 4)
         self.assertContains(response, ".form-actions > .button-link")
 
     def test_cancel_is_a_button(self):
@@ -3000,3 +3001,358 @@ class RefereeOverviewTests(TestCase):
 
             past = self.client.get(reverse(url_name), {"when": "past"})
             self.assertEqual(list(past.context["cl"].result_list), [self.past])
+
+
+class RefereeReportTests(TestCase):
+    """裁判报告：发起要求、赛后填写、提交通知与 Word 导出。"""
+
+    def setUp(self):
+        call_command("setup_roles", verbosity=0)
+        user_model = get_user_model()
+        self.manager = user_model.objects.create_user("rp-manager", password="Rp-pass-2026!")
+        self.manager.groups.add(Group.objects.get(name="排班管理员"))
+        referee_group = Group.objects.get(name="裁判员")
+        names = ["吴扬", "许智戬", "裴志恒", "刘韦国", "局外人"]
+        self.referees = []
+        for index, name in enumerate(names):
+            user = user_model.objects.create_user(f"rp-ref{index}", password="Rp-pass-2026!")
+            user.groups.add(referee_group)
+            self.referees.append(RefereeProfile.objects.create(user=user, name=name))
+        competition = Competition.objects.create(name="2026年华中科技大学足球联赛（乙组）", season="2026")
+        self.home = Team.objects.create(name="软件学院", short_name="软件")
+        self.away = Team.objects.create(name="公共管理学院", short_name="公管")
+        venue = Venue.objects.create(name="中心操场")
+        self.match = Match.objects.create(
+            competition=competition,
+            match_number="6",
+            kickoff_at=timezone.now().replace(second=0, microsecond=0) - timedelta(hours=3),
+            home_team=self.home,
+            away_team=self.away,
+            venue=venue,
+            assignment_status=Match.AssignmentStatus.PUBLISHED,
+        )
+        for position, referee in enumerate(self.referees[:4], start=1):
+            Assignment.objects.create(match=self.match, referee=referee, position=position)
+
+    def report_data(self, **overrides):
+        data = {
+            "home_score": "1",
+            "away_score": "2",
+            "winner": "",
+            "sendoff_notes": "软件5号拉拽，破坏明显进球得分机会。",
+            "penalty_notes": "公管10号主罚被扑出。",
+            "error_notes": "",
+            "summary": "判罚上没有重大问题。",
+            "cautions-TOTAL_FORMS": "3",
+            "cautions-INITIAL_FORMS": "0",
+            "cautions-0-team": "软件",
+            "cautions-0-number": "6",
+            "cautions-0-name": "袁鼎",
+            "cautions-0-minute": "44",
+            "cautions-0-reason": "草率地绊",
+            "cautions-1-team": "公管",
+            "cautions-1-number": "10",
+            "cautions-1-name": "黄晗睿",
+            "cautions-1-minute": "59",
+            "cautions-1-reason": "鲁莽地抢截",
+            "sendoffs-TOTAL_FORMS": "1",
+            "sendoffs-INITIAL_FORMS": "0",
+            "sendoffs-0-team": "软件",
+            "sendoffs-0-number": "5",
+            "sendoffs-0-name": "余畅",
+            "sendoffs-0-minute": "23",
+            "sendoffs-0-reason": "拉拽破坏明显进球得分机会",
+            "home_goals-TOTAL_FORMS": "2",
+            "home_goals-INITIAL_FORMS": "0",
+            "home_goals-0-name": "郑逸文",
+            "home_goals-0-number": "10",
+            "home_goals-0-minute": "78",
+            "away_goals-TOTAL_FORMS": "2",
+            "away_goals-INITIAL_FORMS": "0",
+            "away_goals-0-name": "毛星霖",
+            "away_goals-0-number": "88",
+            "away_goals-0-minute": "27",
+            "away_goals-1-name": "陈智康",
+            "away_goals-1-number": "4",
+            "away_goals-1-minute": "80",
+        }
+        data.update(overrides)
+        return data
+
+    def url(self, name):
+        return reverse(f"scheduling:{name}", args=[self.match.pk])
+
+    def test_assigned_referee_can_submit_after_match(self):
+        self.client.force_login(self.referees[0].user)
+
+        self.assertEqual(self.client.get(self.url("report_edit")).status_code, 200)
+        response = self.client.post(self.url("report_edit"), {**self.report_data(), "submit": ""})
+
+        self.assertRedirects(response, self.url("match_detail"))
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertEqual(report.author, self.referees[0])
+        self.assertEqual(report.status, RefereeReport.Status.SUBMITTED)
+        self.assertEqual(report.winner, RefereeReport.Winner.AWAY)  # 未选时按比分自动填写
+        self.assertEqual(len(report.cautions), 2)  # 空行被忽略
+        self.assertEqual(report.cautions[0]["name"], "袁鼎")
+        self.assertEqual(len(report.away_goals), 2)
+        self.assertTrue(
+            Notification.objects.filter(recipient=self.manager, message__contains="已提交").exists()
+        )
+
+    def test_draft_does_not_require_scores(self):
+        self.client.force_login(self.referees[0].user)
+
+        self.client.post(
+            self.url("report_edit"),
+            {**self.report_data(home_score="", away_score="", summary=""), "save": ""},
+        )
+
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertEqual(report.status, RefereeReport.Status.DRAFT)
+        self.assertFalse(Notification.objects.exists())
+
+    def test_submit_requires_score_and_summary(self):
+        self.client.force_login(self.referees[0].user)
+
+        response = self.client.post(
+            self.url("report_edit"),
+            {**self.report_data(home_score="", summary=""), "submit": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "提交前请填写比分")
+        self.assertFalse(RefereeReport.objects.exists())
+
+    def test_partial_row_is_rejected(self):
+        self.client.force_login(self.referees[0].user)
+
+        response = self.client.post(
+            self.url("report_edit"),
+            {**self.report_data(**{"cautions-2-name": "只填了名字"}), "submit": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "必填")
+
+    def test_cannot_start_before_kickoff_or_for_other_matches(self):
+        self.client.force_login(self.referees[4].user)
+        response = self.client.get(self.url("report_edit"), follow=True)
+        self.assertContains(response, "只有本场裁判")
+
+        self.match.kickoff_at = timezone.now() + timedelta(hours=2)
+        self.match.save()
+        self.client.force_login(self.referees[0].user)
+        response = self.client.get(self.url("report_edit"), follow=True)
+        self.assertContains(response, "比赛开球后")
+        self.assertFalse(RefereeReport.objects.exists())
+
+    def test_manager_requests_report_from_chosen_referee(self):
+        self.client.force_login(self.manager)
+        assistant = self.match.assignments.get(position=2)
+
+        self.client.post(self.url("report_request"), {"author": assistant.pk})
+
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertEqual(report.status, RefereeReport.Status.REQUESTED)
+        self.assertEqual(report.author, self.referees[1])
+        self.assertEqual(report.requested_by, self.manager)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.referees[1].user, message__contains="请你提交"
+            ).exists()
+        )
+
+        # 被指定的裁判在首页看到待提交的报告，其他裁判不能修改。
+        self.client.force_login(self.referees[1].user)
+        self.assertContains(self.client.get(reverse("scheduling:home")), "待提交的裁判报告")
+        self.client.force_login(self.referees[0].user)
+        self.assertEqual(self.client.get(self.url("report_edit")).status_code, 403)
+
+    def test_referee_cannot_request_reports(self):
+        self.client.force_login(self.referees[0].user)
+        assignment = self.match.assignments.get(position=1)
+
+        response = self.client.post(self.url("report_request"), {"author": assignment.pk})
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_download_matches_association_template(self):
+        from docx import Document
+
+        self.client.force_login(self.referees[0].user)
+        self.client.post(self.url("report_edit"), {**self.report_data(), "submit": ""})
+
+        response = self.client.get(self.url("report_download"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("wordprocessingml", response["Content-Type"])
+        self.assertIn(".docx", response["Content-Disposition"])
+        document = Document(BytesIO(response.content))
+        text = "\n".join(p.text for p in document.paragraphs)
+        # 标题行：左校徽、中标题、右会徽
+        self.assertIn("华中科技大学裁判报告表", document.tables[0].cell(0, 1).text)
+        self.assertEqual(len(document.inline_shapes), 2)
+        self.assertIn("1，比赛名称：2026年华中科技大学足球联赛（乙组）", text)
+        self.assertIn("2，比赛对阵双方：软件VS公管  场序：6", text)
+        self.assertIn("5，比赛结果：80分钟内比分：1:2      获胜队：公管", text)
+        self.assertIn("裁判员：吴扬 第一助理：许智戬 第二助理：裴志恒 第四官员：刘韦国", text)
+        caution_table = document.tables[1]
+        self.assertEqual(
+            [cell.text for cell in caution_table.rows[1].cells],
+            ["软件", "6", "袁鼎", "44min", "草率地绊"],
+        )
+        goals = document.tables[3]
+        self.assertEqual(goals.rows[2].cells[0].text, "郑逸文")
+        self.assertEqual(goals.rows[3].cells[3].text, "陈智康")
+        self.assertIn("软件5号拉拽", document.tables[4].cell(0, 0).text)
+
+    def test_download_permissions(self):
+        self.client.force_login(self.referees[0].user)
+        self.client.post(self.url("report_edit"), {**self.report_data(), "submit": ""})
+
+        for user, status in (
+            (self.referees[2].user, 200),  # 本场其他裁判可以下载
+            (self.manager, 200),
+            (self.referees[4].user, 403),
+        ):
+            self.client.force_login(user)
+            self.assertEqual(self.client.get(self.url("report_download")).status_code, status)
+
+    # ---- 点球决胜 ----
+    def shootout_data(self, **overrides):
+        data = self.report_data(
+            home_score="1",
+            away_score="1",
+            has_shootout="on",
+            home_shootout_score="4",
+            away_shootout_score="3",
+            **{
+                "away_goals-1-name": "",
+                "away_goals-1-number": "",
+                "away_goals-1-minute": "",
+                "shootout_kicks-TOTAL_FORMS": "3",
+                "shootout_kicks-INITIAL_FORMS": "0",
+                "shootout_kicks-0-home_number": "9",
+                "shootout_kicks-0-home_name": "张三",
+                "shootout_kicks-0-home_result": "罚进",
+                "shootout_kicks-0-away_number": "10",
+                "shootout_kicks-0-away_name": "黄晗睿",
+                "shootout_kicks-0-away_result": "未进",
+                "shootout_kicks-1-home_number": "7",
+                "shootout_kicks-1-home_result": "罚进",
+            },
+        )
+        data.update(overrides)
+        return data
+
+    def test_shootout_is_recorded_and_exported(self):
+        from docx import Document
+
+        self.client.force_login(self.referees[0].user)
+        response = self.client.post(self.url("report_edit"), {**self.shootout_data(), "submit": ""})
+
+        self.assertRedirects(response, self.url("match_detail"))
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertTrue(report.has_shootout)
+        self.assertEqual((report.home_shootout_score, report.away_shootout_score), (4, 3))
+        self.assertEqual(report.winner, RefereeReport.Winner.HOME)  # 按点球比分自动填写
+        self.assertEqual(len(report.shootout_kicks), 2)
+        self.assertEqual(report.shootout_kicks[0]["away_result"], "未进")
+        self.assertEqual(report.shootout_kicks[1]["away_result"], "")
+
+        document = Document(BytesIO(self.client.get(self.url("report_download")).content))
+        text = "\n".join(p.text for p in document.paragraphs)
+        self.assertIn("80分钟内比分：1:1    点球决胜：4:3      获胜队：软件", text)
+        self.assertIn("点球决胜", [p.text for p in document.paragraphs])
+        kicks = document.tables[4]
+        self.assertIn("主队（软件）", kicks.rows[0].cells[1].text)
+        self.assertEqual(
+            [cell.text for cell in kicks.rows[2].cells],
+            ["1", "9", "张三", "罚进", "10", "黄晗睿", "未进"],
+        )
+
+    def test_shootout_requires_draw_and_a_winner(self):
+        self.client.force_login(self.referees[0].user)
+
+        not_a_draw = self.client.post(
+            self.url("report_edit"), {**self.shootout_data(home_score="2"), "submit": ""}
+        )
+        tied = self.client.post(
+            self.url("report_edit"),
+            {**self.shootout_data(away_shootout_score="4"), "submit": ""},
+        )
+        missing = self.client.post(
+            self.url("report_edit"),
+            {**self.shootout_data(home_shootout_score=""), "submit": ""},
+        )
+
+        self.assertContains(not_a_draw, "不需要点球决胜")
+        self.assertContains(tied, "点球决胜必须分出胜负")
+        self.assertContains(missing, "请填写点球比分")
+        self.assertFalse(RefereeReport.objects.exists())
+
+    def test_unchecked_shootout_ignores_hidden_rows(self):
+        from docx import Document
+
+        self.client.force_login(self.referees[0].user)
+        data = self.shootout_data(home_score="1", away_score="2")
+        del data["has_shootout"]
+        data["shootout_kicks-2-home_name"] = "只填了名字"  # 隐藏区域里的残留输入
+
+        response = self.client.post(self.url("report_edit"), {**data, "submit": ""})
+
+        self.assertRedirects(response, self.url("match_detail"))
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertFalse(report.has_shootout)
+        self.assertIsNone(report.home_shootout_score)
+        self.assertEqual(report.shootout_kicks, [])
+        document = Document(BytesIO(self.client.get(self.url("report_download")).content))
+        self.assertNotIn("点球决胜", "\n".join(p.text for p in document.paragraphs))
+
+    def test_new_report_form_starts_empty(self):
+        self.client.force_login(self.referees[0].user)
+
+        response = self.client.get(self.url("report_edit"))
+
+        form = response.context["form"]
+        self.assertIsNone(form["home_score"].value())
+        self.assertFalse(form["winner"].value())
+        self.assertNotRegex(response.content.decode(), r"<input[^>]*checked")
+        self.assertNotContains(response, 'name="competition_title"')
+        self.assertContains(response, "比赛名称：2026年华中科技大学足球联赛（乙组）")
+        self.assertEqual(response.context["shootout_section"][2].total_form_count(), 3)
+
+    def test_winner_must_match_score(self):
+        self.client.force_login(self.referees[0].user)
+
+        wrong = self.client.post(
+            self.url("report_edit"), {**self.report_data(winner="home"), "submit": ""}
+        )
+        draw = self.client.post(
+            self.url("report_edit"),
+            {**self.report_data(home_score="2", away_score="2", winner="draw"), "submit": ""},
+        )
+
+        self.assertContains(wrong, "与比分不符")
+        self.assertRedirects(draw, self.url("match_detail"))
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertEqual(report.winner_label(), "平局")
+
+    def test_report_list_and_admin_action(self):
+        admin_user = get_user_model().objects.create_superuser(
+            "rp-admin", "rp-admin@example.test", "Rp-pass-2026!"
+        )
+        self.client.force_login(admin_user)
+
+        self.client.post(
+            reverse("admin:scheduling_match_changelist") + "?when=all",
+            {"action": "request_reports", "_selected_action": [self.match.pk]},
+        )
+
+        report = RefereeReport.objects.get(match=self.match)
+        self.assertEqual(report.author, self.referees[0])
+        self.client.force_login(self.manager)
+        listing = self.client.get(reverse("scheduling:report_list"))
+        self.assertContains(listing, "吴扬")
+        self.assertContains(listing, "待填写")

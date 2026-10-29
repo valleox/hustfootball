@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}裁判报告 · {{ org_name }}{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="back-link">
+    <a class="button-link secondary small" href="{% url 'scheduling:match_detail' match.pk %}">← 返回比赛详情</a>
+  </p>
+
+  <h1>裁判报告</h1>
+  <p class="muted">
+    {{ match.competition }} · {{ match.kickoff_at|date:"Y年n月j日 H:i" }} · {{ match.venue }}
+    {% if match.match_number %} · 场序 {{ match.match_number }}{% endif %}
+  </p>
+  <h2>{{ match.home_team }} vs {{ match.away_team }}</h2>
+  <p>
+    填写裁判：{{ report.author.name }}
+    · 状态：<span class="status-tag {% if report.is_submitted %}confirmed{% endif %}">{{ report.get_status_display }}</span>
+    {% if report.submitted_at %}<span class="muted">· {{ report.submitted_at|date:"n月j日 H:i" }}提交</span>{% endif %}
+  </p>
+
+  <form method="post" novalidate class="report-form">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    <h3>比赛基本信息</h3>
+    <p>比赛名称：{{ match.competition.name }}</p>
+    <div class="score-row">
+      <div class="form-field">
+        <label for="{{ form.home_score.id_for_label }}">{{ form.home_score.label }}</label>
+        {{ form.home_score }}
+        {{ form.home_score.errors }}
+      </div>
+      <span class="score-colon" aria-hidden="true">:</span>
+      <div class="form-field">
+        <label for="{{ form.away_score.id_for_label }}">{{ form.away_score.label }}</label>
+        {{ form.away_score }}
+        {{ form.away_score.errors }}
+      </div>
+    </div>
+    <p class="muted">比分按 80 分钟内计算。</p>
+
+    <div class="form-field">
+      <label class="checkbox-label" for="{{ form.has_shootout.id_for_label }}">
+        {{ form.has_shootout }} {{ form.has_shootout.label }}
+      </label>
+      {{ form.has_shootout.errors }}
+    </div>
+    <div class="shootout-block" data-shootout {% if not form.has_shootout.value %}hidden{% endif %}>
+      <div class="score-row">
+        <div class="form-field">
+          <label for="{{ form.home_shootout_score.id_for_label }}">{{ form.home_shootout_score.label }}</label>
+          {{ form.home_shootout_score }}
+          {{ form.home_shootout_score.errors }}
+        </div>
+        <span class="score-colon" aria-hidden="true">:</span>
+        <div class="form-field">
+          <label for="{{ form.away_shootout_score.id_for_label }}">{{ form.away_shootout_score.label }}</label>
+          {{ form.away_shootout_score }}
+          {{ form.away_shootout_score.errors }}
+        </div>
+      </div>
+      {% with key=shootout_section.0 label=shootout_section.1 formset=shootout_section.2 home_team=match.home_team away_team=match.away_team %}
+        {% include "scheduling/_report_shootout.html" %}
+      {% endwith %}
+    </div>
+
+    <div class="form-field">
+      <label>{{ form.winner.label }}</label>
+      {{ form.winner }}
+      {{ form.winner.errors }}
+    </div>
+
+    {% for key, label, formset in row_sections %}
+      {% include "scheduling/_report_rows.html" %}
+    {% endfor %}
+    <p class="muted">不需要的行留空即可，导出时会自动忽略。</p>
+
+    {% for field in form %}
+      {% if field.name in "sendoff_notes penalty_notes error_notes summary" %}
+        <div class="form-field">
+          <h3><label for="{{ field.id_for_label }}">{{ field.label }}</label></h3>
+          {{ field }}
+          {{ field.errors }}
+        </div>
+      {% endif %}
+    {% endfor %}
+
+    <div class="form-actions">
+      <button type="submit" name="submit">{% if report.is_submitted %}重新提交{% else %}提交报告{% endif %}</button>
+      <button type="submit" name="save" class="secondary">保存草稿</button>
+      {% if report.pk %}
+        <a class="button-link secondary" href="{% url 'scheduling:report_download' match.pk %}">下载 Word</a>
+      {% endif %}
+    </div>
+  </form>
+</section>
+
+<script>
+  // 「添加一行」：复制空行模板，并更新表单集的 TOTAL_FORMS。
+  document.querySelectorAll("[data-add-row]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var key = button.dataset.addRow;
+      var total = document.getElementById("id_" + key + "-TOTAL_FORMS");
+      var template = document.querySelector('[data-empty-row="' + key + '"]');
+      var html = template.innerHTML.replace(/__prefix__/g, total.value);
+      document.querySelector('[data-rows="' + key + '"]').insertAdjacentHTML("beforeend", html);
+      total.value = parseInt(total.value, 10) + 1;
+    });
+  });
+
+  // 勾选「点球决胜」后才显示点球比分和罚球记录。
+  (function () {
+    var checkbox = document.getElementById("{{ form.has_shootout.id_for_label }}");
+    var block = document.querySelector("[data-shootout]");
+    checkbox.addEventListener("change", function () {
+      block.hidden = !checkbox.checked;
+    });
+  })();
+</script>
+{% endblock %}

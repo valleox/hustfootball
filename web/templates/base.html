@@ -495,6 +495,78 @@
       line-height: 1.4;
     }
     .help-text ul { margin: 4px 0 0; padding-left: 18px; }
+
+    /* ===== 裁判报告 ===== */
+    .report-form h3 { margin: 28px 0 10px; font-size: 19px; }
+    .score-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: end;
+      gap: 12px;
+    }
+    .score-row .form-field { margin-bottom: 0; }
+    .score-colon { padding-bottom: 10px; font-size: 24px; font-weight: 600; }
+    .checkbox-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .checkbox-label input { width: 20px; height: 20px; min-height: 0; margin: 0; }
+    .shootout-block {
+      margin: 0 0 18px;
+      padding: 16px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+    }
+    .shootout-block[hidden] { display: none; }
+    .shootout-block h3 { margin-top: 12px; }
+    .row-table { min-width: 640px; }
+    /* 点球决胜：轮次自动编号 */
+    .shootout-table tbody { counter-reset: round; }
+    .shootout-table tbody tr { counter-increment: round; }
+    .shootout-table td.round { width: 56px; text-align: center; font-weight: 600; }
+    .shootout-table td.round::after { content: counter(round); }
+    .shootout-table thead th { text-align: center; }
+    .row-table th,
+    .row-table td { padding: 6px; }
+    .row-table td input,
+    .row-table td select { min-height: 38px; padding: 6px 10px; font-size: 15px; }
+    .row-table .field-number,
+    .row-table .field-minute { width: 110px; }
+    .row-table .field-team { width: 150px; }
+    .row-table .errorlist { margin: 4px 0 0; font-size: 12px; }
+    /* 手机上每一行改为卡片，免得左右滚动 */
+    @media (max-width: 720px) {
+      .row-table { min-width: 0; border: 0; background: none; }
+      .row-table thead { display: none; }
+      .row-table tr {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding: 12px;
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+      }
+      .row-table td { display: block; width: auto !important; padding: 0; border: 0; }
+      .row-table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ink-muted);
+        font-size: 12px;
+      }
+      .row-table .field-reason { grid-column: 1 / -1; }
+      /* 点球决胜：第一行主队、第二行客队，各为 号码 / 姓名 / 结果 */
+      .shootout-table tr { grid-template-columns: 1fr 1.6fr 1.3fr; }
+      .shootout-table td.round { grid-column: 1 / -1; text-align: left; }
+      .shootout-table td.round::before { display: inline; margin: 0; content: "第 "; color: inherit; font-size: inherit; }
+      .shootout-table td.round::after { content: counter(round) " 轮"; }
+    }
     .errorlist {
       list-style: none;
       margin: 6px 0 0;

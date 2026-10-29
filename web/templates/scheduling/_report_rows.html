@@ -1,0 +1,29 @@
+<h3>{{ label }}</h3>
+{{ formset.management_form }}
+{{ formset.non_form_errors }}
+<div class="table-scroll">
+  <table class="row-table">
+    <thead>
+      <tr>
+        {% for field in formset.empty_form.visible_fields %}<th>{{ field.label }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody data-rows="{{ key }}">
+      {% for row in formset %}
+        <tr>
+          {% for field in row.visible_fields %}
+            <td class="field-{{ field.name }}" data-label="{{ field.label }}">{{ field }}{{ field.errors }}</td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<template data-empty-row="{{ key }}">
+  <tr>
+    {% for field in formset.empty_form.visible_fields %}
+      <td class="field-{{ field.name }}" data-label="{{ field.label }}">{{ field }}</td>
+    {% endfor %}
+  </tr>
+</template>
+<p><button type="button" class="secondary small" data-add-row="{{ key }}">＋ 添加一行</button></p>

@@ -30,6 +30,7 @@ from .models import (
     MatchAssignmentSummary,
     Notification,
     RefereeProfile,
+    RefereeReport,
     Team,
     Venue,
 )
@@ -315,7 +316,7 @@ class MatchAdmin(UpcomingFirstMixin, admin.ModelAdmin):
 
         return readonly_fields
 
-    actions = ("publish_selected",)
+    actions = ("publish_selected", "request_reports")
     actions_on_bottom = True
 
     @admin.display(description="比赛", ordering="kickoff_at")
@@ -454,6 +455,46 @@ class MatchAdmin(UpcomingFirstMixin, admin.ModelAdmin):
             )
         for reason in skipped:
             self.message_user(request, f"未发布：{reason}", messages.WARNING)
+
+    def has_report_permission(self, request):
+        return request.user.has_perm("scheduling.change_assignment")
+
+    @admin.action(
+        description="要求提交裁判报告（默认主裁判填写）",
+        permissions=["report"],
+    )
+    def request_reports(self, request, queryset):
+        from .reports import default_author, new_report, notify_report_requested
+
+        requested, skipped = 0, []
+        for match in queryset.select_related("home_team", "away_team", "venue", "competition"):
+            report = RefereeReport.objects.filter(match=match).first()
+            author = default_author(match)
+            if match.assignment_status != Match.AssignmentStatus.PUBLISHED or author is None:
+                skipped.append(f"{match_label(match)}：裁判安排尚未发布")
+                continue
+            if match.status == Match.Status.CANCELLED:
+                skipped.append(f"{match_label(match)}：比赛已取消")
+                continue
+            if report is not None and report.is_submitted:
+                skipped.append(f"{match_label(match)}：报告已经提交")
+                continue
+            if report is None:
+                report = new_report(match, author, requested_by=request.user)
+            else:
+                report.status = RefereeReport.Status.REQUESTED
+                report.requested_by = request.user
+                report.requested_at = timezone.now()
+            report.save()
+            notify_report_requested(request, report)
+            requested += 1
+
+        if requested:
+            self.message_user(
+                request, f"已要求 {requested} 场比赛的裁判提交报告。", messages.SUCCESS
+            )
+        for reason in skipped:
+            self.message_user(request, f"未发起：{reason}", messages.WARNING)
 
     def save_formset(self, request, form, formset, change):
         instances = formset.save(commit=False)
@@ -614,6 +655,43 @@ class AssignmentAdmin(admin.ModelAdmin):
                 swapped.match,
                 [(swapped.referee, swapped.get_position_display())],
             )
+
+
+@admin.register(RefereeReport)
+class RefereeReportAdmin(admin.ModelAdmin):
+    list_display = ("report_match", "author", "status", "submitted_at", "download")
+    list_display_links = None
+    list_filter = ("status", "match__competition")
+    search_fields = ("author__name", "match__home_team__name", "match__away_team__name")
+    list_select_related = (
+        "author",
+        "match__competition",
+        "match__home_team",
+        "match__away_team",
+        "match__venue",
+    )
+    fields = ("match", "author", "status", "requested_by", "requested_at", "submitted_at")
+    readonly_fields = ("match", "requested_by", "requested_at", "submitted_at")
+    autocomplete_fields = ("author",)
+
+    @admin.display(description="比赛", ordering="match__kickoff_at")
+    def report_match(self, obj):
+        return match_overview_html(
+            obj.match, reverse("admin:scheduling_refereereport_change", args=[obj.pk])
+        )
+
+    @admin.display(description="报告")
+    def download(self, obj):
+        return format_html(
+            '<a class="chip-link" href="{}">查看</a> '
+            '<a class="chip-link" href="{}">下载 Word</a>',
+            reverse("scheduling:report_edit", args=[obj.match_id]),
+            reverse("scheduling:report_download", args=[obj.match_id]),
+        )
+
+    def has_add_permission(self, request):
+        # 报告由裁判在前台填写，或在「比赛」列表用动作发起。
+        return False
 
 
 @admin.register(InviteCode)

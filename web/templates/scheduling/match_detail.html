@@ -132,5 +132,43 @@
     </tbody>
   </table>
   {% endif %}
+
+  {% if show_report_section %}
+    <hr>
+    <h2>裁判报告</h2>
+    {% if report %}
+      <p>
+        填写裁判：{{ report.author.name }}
+        · <span class="status-tag {% if report.is_submitted %}confirmed{% endif %}">{{ report.get_status_display }}</span>
+        {% if report.submitted_at %}<span class="muted">· {{ report.submitted_at|date:"n月j日 H:i" }}提交</span>{% endif %}
+      </p>
+    {% else %}
+      <p class="muted">本场还没有裁判报告。</p>
+    {% endif %}
+
+    <div class="form-actions">
+      {% if can_edit_report %}
+        <a class="button-link" href="{% url 'scheduling:report_edit' match.pk %}">
+          {% if report.is_submitted %}查看 / 修改报告{% else %}填写报告{% endif %}
+        </a>
+      {% elif can_start_report %}
+        <a class="button-link" href="{% url 'scheduling:report_edit' match.pk %}">填写报告</a>
+      {% endif %}
+      {% if can_download_report %}
+        <a class="button-link secondary" href="{% url 'scheduling:report_download' match.pk %}">下载 Word</a>
+      {% endif %}
+    </div>
+
+    {% if report_request_form %}
+      <form method="post" action="{% url 'scheduling:report_request' match.pk %}" class="filter-bar">
+        {% csrf_token %}
+        <label for="{{ report_request_form.author.id_for_label }}" class="sr-only">填写裁判</label>
+        {{ report_request_form.author }}
+        <button type="submit" class="secondary">
+          {% if report %}重新发送提交要求{% else %}要求提交裁判报告{% endif %}
+        </button>
+      </form>
+    {% endif %}
+  {% endif %}
 </section>
 {% endblock %}

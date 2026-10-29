@@ -414,6 +414,93 @@ class Notification(models.Model):
         return self.message[:40]
 
 
+class RefereeReport(TimeStampedModel):
+    """裁判报告：每场比赛一份，由指定裁判（通常是主裁判）填写，可导出为 Word。
+
+    警告、罚令出场、进球等明细以列表形式存放，每项为一个字典，
+    键见 forms.py 中对应的行表单。
+    """
+
+    class Status(models.TextChoices):
+        REQUESTED = "requested", "待填写"
+        DRAFT = "draft", "草稿"
+        SUBMITTED = "submitted", "已提交"
+
+    match = models.OneToOneField(
+        Match,
+        on_delete=models.CASCADE,
+        related_name="report",
+        verbose_name="比赛",
+    )
+    author = models.ForeignKey(
+        RefereeProfile,
+        on_delete=models.PROTECT,
+        related_name="reports",
+        verbose_name="填写裁判",
+    )
+    status = models.CharField(
+        "状态",
+        max_length=20,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="requested_reports",
+        verbose_name="发起人",
+        null=True,
+        blank=True,
+    )
+    requested_at = models.DateTimeField("发起时间", null=True, blank=True)
+    submitted_at = models.DateTimeField("提交时间", null=True, blank=True)
+
+    class Winner(models.TextChoices):
+        HOME = "home", "主队"
+        AWAY = "away", "客队"
+        DRAW = "draw", "平局"
+
+    home_score = models.PositiveSmallIntegerField("主队进球（80分钟内）", null=True, blank=True)
+    away_score = models.PositiveSmallIntegerField("客队进球（80分钟内）", null=True, blank=True)
+    winner = models.CharField("获胜队", max_length=10, choices=Winner.choices, blank=True)
+    has_shootout = models.BooleanField("点球决胜", default=False)
+    home_shootout_score = models.PositiveSmallIntegerField("主队点球罚进", null=True, blank=True)
+    away_shootout_score = models.PositiveSmallIntegerField("客队点球罚进", null=True, blank=True)
+    # 每轮一行：主队罚球队员在左、客队在右
+    shootout_kicks = models.JSONField("点球决胜罚球记录", default=list, blank=True)
+    cautions = models.JSONField("警告队员", default=list, blank=True)
+    sendoffs = models.JSONField("罚令出场", default=list, blank=True)
+    home_goals = models.JSONField("主队进球队员", default=list, blank=True)
+    away_goals = models.JSONField("客队进球队员", default=list, blank=True)
+    sendoff_notes = models.TextField("红牌情况说明", blank=True)
+    penalty_notes = models.TextField("罚球点球情况说明", blank=True)
+    error_notes = models.TextField("严重错漏判情况说明", blank=True)
+    summary = models.TextField("整场吹罚问题总结", blank=True)
+
+    class Meta:
+        verbose_name = "裁判报告"
+        verbose_name_plural = "裁判报告"
+        ordering = ["-match__kickoff_at", "-id"]
+
+    def __str__(self):
+        return f"{self.match} 裁判报告"
+
+    @property
+    def is_submitted(self):
+        return self.status == self.Status.SUBMITTED
+
+    def winner_label(self):
+        """报告中显示的获胜队：球队简称或「平局」。"""
+        if self.winner == self.Winner.HOME:
+            team = self.match.home_team
+        elif self.winner == self.Winner.AWAY:
+            team = self.match.away_team
+        else:
+            return self.get_winner_display()
+        return team.short_name or team.name
+
+
 class MatchAssignmentSummary(Match):
     """后台「裁判安排」列表：每场比赛一行，四个岗位并排显示。"""
 
